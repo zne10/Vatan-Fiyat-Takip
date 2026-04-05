@@ -115,6 +115,74 @@ async def handle_product_history(request):
     return web.json_response(history)
 
 
+async def handle_brands(request):
+    """Tüm markalar ve ürün sayıları."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT brand, COUNT(*) as count
+        FROM products
+        WHERE brand != '' AND brand IS NOT NULL
+        GROUP BY brand
+        ORDER BY count DESC
+    """)
+    brands = _rows_to_dicts(cur)
+    conn.close()
+    return web.json_response(brands)
+
+
+async def handle_categories(request):
+    """Tüm kategoriler ve ürün sayıları."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT category, COUNT(*) as count
+        FROM products
+        WHERE category != '' AND category IS NOT NULL
+        GROUP BY category
+        ORDER BY count DESC
+    """)
+    categories = _rows_to_dicts(cur)
+    conn.close()
+    return web.json_response(categories)
+
+
+async def handle_products_by_filter(request):
+    """Marka veya kategoriye göre ürünler."""
+    brand = request.query.get("brand", "")
+    category = request.query.get("category", "")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    conditions = []
+    params = []
+    if brand:
+        conditions.append("p.brand = ?")
+        params.append(brand)
+    if category:
+        conditions.append("p.category = ?")
+        params.append(category)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    cur.execute(f"""
+        SELECT p.sku, p.name, p.url, p.brand, p.category, p.created_at,
+               ph.price, ph.old_price, ph.in_stock, ph.scraped_at
+        FROM products p
+        LEFT JOIN price_history ph ON ph.product_sku = p.sku
+            AND ph.scraped_at = (
+                SELECT MAX(ph2.scraped_at) FROM price_history ph2
+                WHERE ph2.product_sku = p.sku
+            )
+        {where}
+        ORDER BY p.brand, p.name
+    """, params)
+    products = _rows_to_dicts(cur)
+    conn.close()
+    return web.json_response(products)
+
+
 async def handle_alerts(request):
     """Aktif fiyat alarmları."""
     conn = get_connection()
@@ -145,6 +213,9 @@ def create_app():
     app.router.add_get("/api/drops", handle_drops)
     app.router.add_get("/api/products/{sku}/history", handle_product_history)
     app.router.add_get("/api/alerts", handle_alerts)
+    app.router.add_get("/api/brands", handle_brands)
+    app.router.add_get("/api/categories", handle_categories)
+    app.router.add_get("/api/filter", handle_products_by_filter)
 
     # CORS
     import aiohttp.web_middlewares

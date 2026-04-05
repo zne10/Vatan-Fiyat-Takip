@@ -54,6 +54,12 @@ FIRSAT_URL = "https://www.vatanbilgisayar.com/firsat-urunler"
 KATEGORI_URLS = [
     "https://www.vatanbilgisayar.com/cep-telefonu-modelleri/",
     "https://www.vatanbilgisayar.com/bilgisayar/",
+    "https://www.vatanbilgisayar.com/tablet/",
+    "https://www.vatanbilgisayar.com/televizyon/",
+    "https://www.vatanbilgisayar.com/kulaklik/",
+    "https://www.vatanbilgisayar.com/akilli-saat/",
+    "https://www.vatanbilgisayar.com/oyun-bilgisayari-notebook/",
+    "https://www.vatanbilgisayar.com/monitor/",
 ]
 KATEGORI_MAX_SAYFA = 5
 

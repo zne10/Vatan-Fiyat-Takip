@@ -1,6 +1,7 @@
 """Vatan Bilgisayar HTML sayfalarından ürün verisi parse etme"""
 
 import json
+import re
 import logging
 from typing import Optional
 from bs4 import BeautifulSoup
@@ -8,6 +9,48 @@ from bs4 import BeautifulSoup
 from vatan_bot.parsers.price_parser import clean_price
 
 logger = logging.getLogger(__name__)
+
+# Bilinen marka isimleri — CDN yolundan gelen küçük harfli isimleri düzelt
+BRAND_MAP = {
+    "apple": "Apple", "samsung": "Samsung", "xiaomi": "Xiaomi", "huawei": "Huawei",
+    "oppo": "Oppo", "realme": "Realme", "honor": "Honor", "oneplus": "OnePlus",
+    "google": "Google", "sony": "Sony", "lg": "LG", "motorola": "Motorola",
+    "nokia": "Nokia", "asus": "Asus", "acer": "Acer", "lenovo": "Lenovo",
+    "hp": "HP", "dell": "Dell", "msi": "MSI", "monster": "Monster",
+    "casper": "Casper", "toshiba": "Toshiba", "jbl": "JBL", "philips": "Philips",
+    "logitech": "Logitech", "razer": "Razer", "steelseries": "SteelSeries",
+    "hyperx": "HyperX", "corsair": "Corsair", "anker": "Anker", "baseus": "Baseus",
+    "ugreen": "Ugreen", "tp-link": "TP-Link", "zyxel": "Zyxel",
+    "sandisk": "SanDisk", "kingston": "Kingston", "lexar": "Lexar",
+    "seagate": "Seagate", "wd": "WD", "verbatim": "Verbatim",
+    "epson": "Epson", "canon": "Canon", "brother": "Brother",
+    "bosch": "Bosch", "dyson": "Dyson", "karcher": "Karcher",
+    "vestel": "Vestel", "arcelik": "Arçelik", "beko": "Beko",
+    "tcl": "TCL", "hisense": "Hisense", "panasonic": "Panasonic",
+}
+
+
+def _extract_brand_from_img(card) -> str:
+    """Ürün kartındaki CDN görsel yolundan marka adını çıkarır."""
+    img = card.select_one("img[data-src]")
+    if img:
+        m = re.search(r"/PRODUCT/([^/]+)/", img.get("data-src", ""))
+        if m:
+            raw = m.group(1).lower()
+            return BRAND_MAP.get(raw, raw.title())
+    return ""
+
+
+def _extract_category_from_breadcrumb(soup) -> str:
+    """Breadcrumb'dan kategori adını çıkarır."""
+    crumbs = soup.select(".breadcrumb a, [class*=breadcrumb] a")
+    if crumbs:
+        # Son breadcrumb linki kategori adıdır
+        return crumbs[-1].get_text(strip=True)
+    h1 = soup.select_one("h1")
+    if h1:
+        return h1.get_text(strip=True)
+    return ""
 
 
 def parse_jsonld_product(html: str) -> Optional[dict]:
@@ -45,10 +88,13 @@ def parse_jsonld_product(html: str) -> Optional[dict]:
 def parse_category_page(html: str) -> list[dict]:
     """
     Kategori/fırsat listesi sayfasından ürün kartlarını parse eder.
-    CSS selector tabanlı.
+    CSS selector tabanlı. Marka ve kategori bilgisini de çıkarır.
     """
     soup = BeautifulSoup(html, "lxml")
     products = []
+
+    # Sayfa genelinden kategori bilgisi
+    page_category = _extract_category_from_breadcrumb(soup)
 
     cards = soup.select(".product-list--list-page")
     for card in cards:
@@ -85,6 +131,9 @@ def parse_category_page(html: str) -> list[dict]:
             if price is None:
                 continue
 
+            # Marka: CDN görsel yolundan çıkar
+            brand = _extract_brand_from_img(card)
+
             products.append(
                 {
                     "name": name,
@@ -92,6 +141,8 @@ def parse_category_page(html: str) -> list[dict]:
                     "price": price,
                     "old_price": old_price,
                     "url": url,
+                    "brand": brand,
+                    "category": page_category,
                 }
             )
         except Exception as e:
