@@ -1,0 +1,536 @@
+Harika bir nokta! Bu gerçekten kritik — Vatan Bilgisayar Cloudflare koruması kullandığı için sabit IP'den gelen botları çok hızlı banlar. İşte güncellenmiş, eksiksiz prompt:
+
+---
+
+# 🔐 GÜNCELLENMİŞ AI AJAN PROMPT'U — IP GİZLEME & DAĞITIK TARAMA DAHİL
+
+---
+
+```
+Sen bir fiyat takip botu yazacaksın. Hedef site: vatanbilgisayar.com
+Site Cloudflare koruması kullandığından sunucu IP'si HİÇBİR ZAMAN 
+hedefe doğrudan istek ATMAMALI. Tüm istekler aracı servisler 
+üzerinden geçmeli.
+
+===============================================================
+BÖLÜM 1: SUNUCU IP GİZLEME — MİMARİ ZORUNLULUK
+===============================================================
+
+KURAL: Kendi sunucunun IP adresi vatanbilgisayar.com'a ASLA 
+ulaşmamalı. Her istek aşağıdaki katmanlardan en az biri 
+üzerinden geçmeli.
+
+---
+
+SEÇENEK A: CRAWL4AI (Birincil Tavsiye)
+---------------------------------------
+Crawl4AI açık kaynaklı bir AI-native crawler'dır.
+Playwright tabanlıdır, gerçek browser fingerprint üretir.
+
+Kurulum:
+  pip install crawl4ai
+  crawl4ai-setup   # Playwright browser'ları indirir
+
+Temel kullanım:
+  from crawl4ai import AsyncWebCrawler
+  from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+  import asyncio, json
+
+  schema = {
+    "name": "Vatan Ürün Listesi",
+    "baseSelector": ".product-list--list-page",
+    "fields": [
+      {"name": "name",      "selector": ".product-list__product-name",  "type": "text"},
+      {"name": "sku",       "selector": ".product-list__product-code",   "type": "text"},
+      {"name": "price",     "selector": ".product-list__price",          "type": "text"},
+      {"name": "old_price", "selector": ".product-list__current-price",  "type": "text"},
+      {"name": "url",       "selector": "a.product-list-link",           "type": "attribute", "attribute": "href"}
+    ]
+  }
+
+  async def scrape(url):
+    async with AsyncWebCrawler(
+      headless=True,
+      browser_type="chromium",
+      verbose=False
+    ) as crawler:
+      result = await crawler.arun(
+        url=url,
+        extraction_strategy=JsonCssExtractionStrategy(schema),
+        # Proxy entegrasyonu:
+        proxy="http://user:pass@proxy-host:port",
+        # Browser fingerprint gizleme:
+        magic=True,        # Otomatik anti-detect
+        simulate_user=True # Mouse hareketi simüle eder
+      )
+      return json.loads(result.extracted_content)
+
+Crawl4AI'ın sağladığı anti-detect özellikleri:
+  - magic=True → navigator.webdriver = false
+  - simulate_user=True → rastgele mouse/scroll hareketi
+  - Gerçek browser (Chromium/Firefox/WebKit) kullanır
+  - Her oturumda farklı browser fingerprint
+
+---
+
+SEÇENEK B: FİRECRAWL (Managed Servis — En Kolay)
+--------------------------------------------------
+Firecrawl bir SaaS scraping servisidir. İstek sizden 
+değil Firecrawl'ın dağıtık altyapısından çıkar.
+Kendi IP'niz hiç görünmez.
+
+  pip install firecrawl-py
+
+  from firecrawl import FirecrawlApp
+
+  app = FirecrawlApp(api_key="fc-YOUR_KEY")
+
+  # Tek ürün fiyatı:
+  result = app.scrape_url(
+    "https://www.vatanbilgisayar.com/samsung-galaxy-s25-fe-akilli-telefon.html",
+    params={
+      "formats": ["extract"],
+      "extract": {
+        "schema": {
+          "price": "number",
+          "name": "string", 
+          "in_stock": "boolean"
+        }
+      }
+    }
+  )
+
+  # Kategori tarama (crawl):
+  crawl_result = app.crawl_url(
+    "https://www.vatanbilgisayar.com/firsat-urunler",
+    params={
+      "limit": 200,
+      "scrapeOptions": {"formats": ["html", "markdown"]}
+    }
+  )
+
+Avantaj: Tamamen managed, IP sorununu Firecrawl halleder.
+Dezavantaj: Ücretli (free tier var: 500 kredi/ay).
+Fiyat: ~$16/ay başlıyor (500k kredi).
+
+---
+
+SEÇENEK C: CLOUDFLARE WORKERS (Serverless — IP'siz Mimari)
+-----------------------------------------------------------
+Cloudflare Workers, 200+ edge konumundan çalışır.
+Her istek farklı Cloudflare datacenter IP'sinden çıkar.
+
+Worker kodu (JavaScript — Cloudflare'de deploy edilir):
+  
+  // wrangler.toml:
+  // name = "vatan-scraper"
+  // compatibility_date = "2024-01-01"
+  
+  export default {
+    async fetch(request, env) {
+      const { url } = await request.json();
+      
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept-Language": "tr-TR,tr;q=0.9",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Referer": "https://www.vatanbilgisayar.com/",
+          "Cache-Control": "no-cache"
+        }
+      });
+      
+      const html = await response.text();
+      return new Response(JSON.stringify({ html, status: response.status }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  };
+
+Python tarafında Worker'ı çağırmak:
+  import requests
+
+  def fetch_via_worker(url):
+    worker_url = "https://vatan-scraper.YOUR-SUBDOMAIN.workers.dev"
+    resp = requests.post(worker_url, json={"url": url})
+    return resp.json()["html"]
+
+Avantaj: Cloudflare'nin kendi IP'leri ile Cloudflare'yi bypass eder!
+         (Cloudflare, kendi Worker IP'lerine güvenir.)
+Free tier: 100.000 istek/gün ücretsiz.
+
+---
+
+SEÇENEK D: SCRAPINGBEE / BRIGHTDATA / OXYLABS (Proxy API)
+----------------------------------------------------------
+Residential proxy ağları kullanır — gerçek ev IP'leri.
+
+  import requests
+
+  # ScrapingBee örneği:
+  def scrape_with_bee(url):
+    response = requests.get(
+      "https://app.scrapingbee.com/api/v1/",
+      params={
+        "api_key": "YOUR_KEY",
+        "url": url,
+        "render_js": "true",        # JavaScript render
+        "premium_proxy": "true",    # Residential proxy
+        "country_code": "tr",       # Türk IP'si kullan
+        "wait_for": ".product-list--list-page",
+        "block_resources": "true"   # CSS/resim yükleme (hız)
+      }
+    )
+    return response.content
+
+  # BrightData (Luminati) örneği:
+  proxies = {
+    "http":  "http://user-country-tr:pass@zproxy.lum-superproxy.io:22225",
+    "https": "http://user-country-tr:pass@zproxy.lum-superproxy.io:22225"
+  }
+  response = requests.get(url, proxies=proxies)
+
+---
+
+SEÇENEK E: PLAYWRIGHT + PROXY ROTASYON (Self-Hosted)
+-----------------------------------------------------
+Kendi altyapında çalışır ama proxy havuzu gerektirir.
+
+  pip install playwright
+  playwright install chromium
+
+  from playwright.async_api import async_playwright
+  import asyncio, random
+
+  PROXIES = [
+    "http://user:pass@proxy1:port",
+    "http://user:pass@proxy2:port",
+    # ... en az 10-20 farklı proxy
+  ]
+
+  async def scrape_product(url):
+    proxy = random.choice(PROXIES)
+    
+    async with async_playwright() as p:
+      browser = await p.chromium.launch(
+        headless=True,
+        proxy={"server": proxy}
+      )
+      
+      # Fingerprint maskeleme:
+      context = await browser.new_context(
+        viewport={"width": random.randint(1200, 1920), 
+                  "height": random.randint(768, 1080)},
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+        locale="tr-TR",
+        timezone_id="Europe/Istanbul",
+        geolocation={"latitude": 41.0082, "longitude": 28.9784},  # İstanbul
+        permissions=["geolocation"],
+        extra_http_headers={
+          "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8"
+        }
+      )
+      
+      # Webdriver tespitini kapat:
+      await context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+        window.chrome = { runtime: {} };
+      """)
+      
+      page = await context.new_page()
+      
+      # İnsan gibi davran:
+      await page.goto(url, wait_until="domcontentloaded")
+      await asyncio.sleep(random.uniform(1.5, 3.5))
+      await page.mouse.move(random.randint(100, 800), random.randint(100, 600))
+      await asyncio.sleep(random.uniform(0.5, 1.5))
+      
+      # JSON-LD'den fiyat çek:
+      price_data = await page.evaluate("""
+        () => {
+          const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+          for (let s of scripts) {
+            try {
+              const d = JSON.parse(s.innerText);
+              if (d['@type'] === 'Product') return d;
+            } catch(e) {}
+          }
+          return null;
+        }
+      """)
+      
+      await browser.close()
+      return price_data
+
+===============================================================
+BÖLÜM 2: TAVSİYE EDİLEN MİMARİ (HİBRİT)
+===============================================================
+
+Katman 1 — Firecrawl (Fırsat sayfası bulk tarama):
+  - /firsat-urunler → günde 4x → Firecrawl API
+  - Maliyet: minimal (az sayfa, yüksek değer)
+
+Katman 2 — Crawl4AI + Proxy (Kategori taraması):
+  - Kategori sayfaları → saatlik → Crawl4AI + Residential Proxy
+  - magic=True + simulate_user=True ile Cloudflare bypass
+
+Katman 3 — Cloudflare Worker (Ürün detay doğrulama):
+  - Belirli ürün fiyat doğrulama → Worker üzerinden
+  - Ücretsiz, 100k istek/gün
+
+Mimari diyagramı:
+  
+  [Scheduler (APScheduler)]
+         |
+         ├─► [Firecrawl API] ──────────────► vatanbilgisayar.com
+         │                                   (Firecrawl IP'leri)
+         │
+         ├─► [Crawl4AI + Residential Proxy] ► vatanbilgisayar.com
+         │                                   (Proxy havuzu IP'leri)
+         │
+         └─► [CF Worker] ─────────────────► vatanbilgisayar.com
+                                            (Cloudflare edge IP'leri)
+  
+  [Senin Sunucun] — vatanbilgisayar.com'a HİÇ bağlanmaz!
+         |
+         ▼
+  [SQLite DB] → [Telegram/Email Notifier]
+
+===============================================================
+BÖLÜM 3: BAN YEMEMEk İÇİN KURALLAR
+===============================================================
+
+1. REQUEST THROTTLING:
+   - Aynı IP'den: max 1 istek / 3 saniye
+   - Ardışık istek sayısı: max 10 → sonra IP değiştir
+   - Proxy rotasyon: round-robin değil, random seç
+   - Gece 02:00-07:00 yoğun tarama yap (trafik düşük, 
+     anomali tespiti zayıf)
+
+2. SESSION YÖNETİMİ:
+   - Her proxy için ayrı cookie jar tut
+   - Cookie'leri session boyunca koru
+   - Çok sık yeni session açma (şüpheli görünür)
+
+3. REQUEST SIRASI (insan davranışı taklit):
+   Ana sayfa → Kategori → Ürün sayfası
+   (Direkt ürün sayfasına git değil!)
+   
+   Kod:
+     await page.goto("https://www.vatanbilgisayar.com/")
+     await sleep(2)
+     await page.goto(kategori_url)
+     await sleep(1.5)
+     await page.goto(urun_url)
+
+4. HEADER'LAR (zorunlu):
+   {
+     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) 
+                    AppleWebKit/537.36 (KHTML, like Gecko) 
+                    Chrome/122.0.0.0 Safari/537.36",
+     "Accept": "text/html,application/xhtml+xml,...",
+     "Accept-Language": "tr-TR,tr;q=0.9",
+     "Accept-Encoding": "gzip, deflate, br",
+     "Connection": "keep-alive",
+     "Upgrade-Insecure-Requests": "1",
+     "Sec-Fetch-Dest": "document",
+     "Sec-Fetch-Mode": "navigate",
+     "Sec-Fetch-Site": "same-origin",
+     "Sec-Ch-Ua": '"Chromium";v="122", ...',
+     "Sec-Ch-Ua-Mobile": "?0",
+     "Sec-Ch-Ua-Platform": '"Windows"'
+   }
+
+5. CLOUDFLARE CHALLENGE GELİRSE:
+   - 503 veya "Just a moment..." → 60-120 saniye bekle
+   - Aynı proxy ile tekrar deneme! Yeni proxy al
+   - Günlük ban: 24 saat o proxy'yi kara listeye al
+
+6. RATE LIMIT ALGILAMASI:
+   - HTTP 429 → exponential backoff: 1→2→4→8→16 dakika
+   - HTTP 403 → proxy değiştir + 5 dakika bekle
+   - HTTP 503 → Cloudflare → Playwright ile dene
+
+===============================================================
+BÖLÜM 4: PROXY TEMİN SEÇENEKLERİ (Önem sırasına göre)
+===============================================================
+
+1. BrightData (Luminati) — En iyi kalite
+   - 72M+ residential IP
+   - Türkiye hedefleme mevcut
+   - ~$8.4/GB
+   - https://brightdata.com
+
+2. Oxylabs — Kurumsal kalite
+   - Residential: ~$8/GB
+   - https://oxylabs.io
+
+3. SmartProxy — Orta bütçe
+   - $7/GB, 40M+ IP
+   - https://smartproxy.com
+
+4. Webshare — Ekonomik başlangıç
+   - 10 proxy ücretsiz, $2.99/ay başlıyor
+   - https://webshare.io
+
+5. Ücretsiz alternatif — Tor + Stem:
+   pip install stem requests[socks]
+   
+   from stem import Signal
+   from stem.control import Controller
+   import requests
+   
+   def get_new_tor_ip():
+     with Controller.from_port(port=9051) as c:
+       c.authenticate()
+       c.signal(Signal.NEWNYM)
+   
+   proxies = {"http": "socks5://127.0.0.1:9050", 
+              "https": "socks5://127.0.0.1:9050"}
+   
+   UYARI: Tor çok yavaş, ticari kullanım için önerilmez.
+
+===============================================================
+BÖLÜM 5: DAĞITIK MİMARİ (İleri Seviye)
+===============================================================
+
+Birden fazla düşük maliyetli VPS'e botu dağıt:
+
+  [Orkestratör (sen)] ──► [GitHub Actions / Cron]
+                               |
+           ┌────────────────────┼────────────────────┐
+           ▼                    ▼                    ▼
+    [VPS-1 Almanya]      [VPS-2 Hollanda]     [VPS-3 Finlandiya]
+    Kategori tarar       Fırsat tarar         Ürün detay tarar
+           |                    |                    |
+           └────────────────────┴────────────────────┘
+                               |
+                     [Merkezi DB (PostgreSQL)]
+                               |
+                     [Telegram Notification]
+
+Her VPS farklı ülkede → farklı IP bloğu → Çok zor ban.
+DigitalOcean/Hetzner droplet: €3-6/ay/node
+
+Alternatif — GitHub Actions ile ücretsiz:
+  .github/workflows/scraper.yml:
+  
+  on:
+    schedule:
+      - cron: '*/30 * * * *'  # Her 30 dakika
+  jobs:
+    scrape:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+        - run: pip install -r requirements.txt
+        - run: python main.py --mode=firsat
+      env:
+        FIRECRAWL_KEY: ${{ secrets.FIRECRAWL_KEY }}
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+
+  GitHub Actions IP'leri sürekli değişir → ban çok zor!
+  Ücretsiz: 2000 dakika/ay (Free plan)
+
+===============================================================
+BÖLÜM 6: SİTE-SPESİFİK BİLGİLER (Önceki analizden)
+===============================================================
+
+[Önceki analizdeki tüm selector ve URL bilgileri buraya dahil]
+
+Fiyat çekme (JSON-LD — en stabil yöntem):
+  soup = BeautifulSoup(html, "html.parser")
+  scripts = soup.find_all("script", type="application/ld+json")
+  for s in scripts:
+    data = json.loads(s.string)
+    if data.get("@type") == "Product":
+      price = float(data["offers"]["price"])
+      in_stock = "InStock" in data["offers"]["availability"]
+      sku = data["sku"]
+
+Fırsat sayfası selector'ları:
+  - Kart:       .product-list--list-page  (24 adet/sayfa)
+  - Fiyat:      .price-basket-camp--new-price .product-list__price
+  - Eski fiyat: .product-list__current-price
+  - SKU:        .product-list__product-code
+  - Link:       a.product-list-link[href]
+
+===============================================================
+BÖLÜM 7: TAM PROJE DOSYA YAPISI
+===============================================================
+
+vatan_price_bot/
+├── config.py              # API key'ler, eşik değerleri
+├── scrapers/
+│   ├── __init__.py
+│   ├── crawl4ai_scraper.py    # Crawl4AI entegrasyonu
+│   ├── firecrawl_scraper.py   # Firecrawl API
+│   └── worker_scraper.py      # Cloudflare Worker
+├── proxy/
+│   ├── __init__.py
+│   ├── manager.py         # Proxy rotasyon ve kara liste
+│   └── checker.py         # Proxy sağlık kontrolü
+├── db/
+│   ├── __init__.py
+│   ├── models.py          # SQLite şeması
+│   └── operations.py      # CRUD operasyonları
+├── notifications/
+│   ├── __init__.py
+│   ├── telegram_bot.py    # Telegram bildirimi
+│   └── email_notifier.py  # E-posta bildirimi
+├── parsers/
+│   ├── __init__.py
+│   ├── product_parser.py  # JSON-LD ve CSS parser
+│   └── price_parser.py    # Fiyat string temizleme
+├── scheduler.py           # APScheduler zamanlama
+├── main.py                # Giriş noktası
+├── requirements.txt
+├── .env                   # Gizli bilgiler (git'e ekleme!)
+└── .github/
+    └── workflows/
+        └── scraper.yml    # GitHub Actions
+
+requirements.txt:
+  crawl4ai>=0.4.0
+  firecrawl-py>=0.0.16
+  playwright>=1.40.0
+  beautifulsoup4>=4.12.0
+  requests>=2.31.0
+  APScheduler>=3.10.0
+  python-telegram-bot>=20.0
+  python-dotenv>=1.0.0
+  fake-useragent>=1.4.0
+  stem>=1.8.0
+  aiohttp>=3.9.0
+  lxml>=5.0.0
+  sqlite3  # stdlib
+
+.env dosyası:
+  FIRECRAWL_API_KEY=fc-xxxxx
+  TELEGRAM_BOT_TOKEN=xxxx:yyyy
+  TELEGRAM_CHAT_ID=-100xxxxx
+  PROXY_LIST=proxy1:port:user:pass,proxy2:port:user:pass
+  PRICE_DROP_THRESHOLD=0.05
+  CF_WORKER_URL=https://vatan-scraper.xxx.workers.dev
+
+Şimdi bu spesifikasyonun TÜM bölümlerini eksiksiz implement 
+eden, production-ready Python kodu yaz. 
+Önce config.py ve proxy/manager.py'den başla, 
+ardından scraper'ları, DB katmanını, bildirim sistemini 
+ve scheduler'ı yaz. Her dosyayı tam olarak yaz.
+```
+
+---
+
+## Kısa Özet: Hangi Aracı Ne Zaman Kullan?
+
+| Araç | Kullanım Durumu | Maliyet | Zorluk |
+|---|---|---|---|
+| **Cloudflare Worker** | Hızlı fiyat doğrulama | Ücretsiz | Kolay |
+| **GitHub Actions** | Periyodik tarama | Ücretsiz | Kolay |
+| **Firecrawl** | Bulk/güvenilir tarama | $16/ay | Çok Kolay |
+| **Crawl4AI** | Self-hosted, tam kontrol | Proxy maliyeti | Orta |
+| **Playwright + Proxy** | Karmaşık JS siteler | Proxy maliyeti | Zor |
+
+En pratik başlangıç kombinasyonu: **GitHub Actions** (ücretsiz zamanlamacı) + **Firecrawl** (ücretsiz tier) + **Cloudflare Worker** (ücretsiz IP maskeleme) → Sıfır sunucu maliyetiyle tam ban koruması.

@@ -1,0 +1,324 @@
+# Vatan Bilgisayar Fiyat Takip Botu — Kapsamlı Teknik Analiz & AI Prompt Dökümanı
+
+---
+
+## 1. SİTE GENEL YAPISI
+
+**Domain:** `www.vatanbilgisayar.com`
+**CDN:** `cdn.vatanbilgisayar.com`
+**Teknoloji Stack:** jQuery 3.6.3, Bootstrap 5, Cloudflare CDN, Firebase (push bildirim), Owl Carousel
+
+---
+
+## 2. URL YAPISI
+
+| Sayfa Türü | URL Örüntüsü |
+|---|---|
+| Ana sayfa | `https://www.vatanbilgisayar.com/` |
+| Kategori | `https://www.vatanbilgisayar.com/{kategori-slug}/` |
+| Ürün detay | `https://www.vatanbilgisayar.com/{urun-slug}.html` |
+| Fırsat ürünler | `https://www.vatanbilgisayar.com/firsat-urunler` |
+| Yeni ürünler | `https://www.vatanbilgisayar.com/yeni-urunler` |
+| Outlet | `https://www.vatanbilgisayar.com/outlet` |
+| Web'e özel | `https://www.vatanbilgisayar.com/webeozel-urunler` |
+
+---
+
+## 3. ANA KATEGORİLER & SLUG'LARI
+
+- `/cep-telefonu-modelleri/` — Telefon
+- `/bilgisayar/` — Bilgisayar
+- `/televizyon` — TV & Görüntü
+- `/bilgisayar-bilesenleri/` — Bilgisayar Parçaları
+- `/ev-mutfak/` — Ev Aletleri
+- `/kisisel-bakim-urunleri/` — Kişisel Bakım
+- `/fotograf-makinesi-video-kamera` — Foto & Kamera
+- `/ofis-malzemeleri/` — Ofis
+- `/aksesuarlar/` — Aksesuar
+- `/oyun-hobi` — Oyun & Hobi
+- `/sogutma-ve-isitma` — Soğutma/Isıtma
+
+---
+
+## 4. KRİTİK CSS SELECTOR'LAR
+
+### Kategori Listesi Sayfası (Her ürün kartı için):
+```
+Kart container:     .product-list--list-page
+Ürün adı:           .product-list__product-name
+Ürün kodu (SKU):    .product-list__product-code
+Güncel fiyat:       .product-list__price                  (span - sadece rakam, örn: "35.499")
+Para birimi:        .product-list__currency                (span - "TL")
+Eski/çizili fiyat:  .product-list__current-price           (span - "919TL" formatında)
+Fiyat container:    .price-basket-camp--new-price
+Maliyet container:  .product-list__cost
+Ürün linki:         a.product-list-link                   (href attr)
+Resim:              .product-list__image-safe img
+Yıldız/puan:        .product-list__product-star-rank
+Fırsat etiketi:     .opportunity_product / .product-list__badge-bar
+"Son 10 gün" ibaresi: .product-list_lowestprice
+```
+
+### Ürün Detay Sayfası:
+```
+Başlık:             h1
+Fiyat (büyük):      .product-detail-price-big / .product-detail-price
+Fiyat (sayı):       .product-list__price
+İndirimli eski:     .old-price
+Puan & yorum sayısı:.wrapper-star
+SKU kodu:           .product-list__product-code  (formatı: "SM-S731BZKGTUR / 153418")
+Sepete ekle:        button içinde "Sepete Ekle" metni
+Breadcrumb:         .breadcrumb a (kategori zinciri)
+```
+
+---
+
+## 5. YAPILANDIRILMIŞ VERİ (JSON-LD / Schema.org)
+
+Her ürün sayfasında `<script type="application/ld+json">` içinde **Product schema** bulunuyor. Bu, en temiz veri kaynağı:
+
+```json
+{
+  "@type": "Product",
+  "name": "Ürün Adı",
+  "sku": "153418",                 ← VATANBİLGİSAYAR İÇ ID
+  "mpn": "SM-S731BZKGTUR",         ← ÜRETICI PARÇA NO
+  "brand": { "name": "SAMSUNG" },
+  "color": "Siyah",
+  "category": "Tüketici Elektroniği > Cep Telefonu > ...",
+  "offers": {
+    "priceCurrency": "TRY",
+    "price": "35499",              ← KURUŞ YOK, NOKTA YOK, SAF SAYI
+    "availability": "https://schema.org/InStock",
+    "priceValidUntil": "2027-04-05"
+  }
+}
+```
+
+**Tavsiye:** Bot, ürün detay sayfalarından JSON-LD parse ederek fiyat çekerse hem en temiz hem de en stabil yöntemdir.
+
+---
+
+## 6. SAYFALAMA YAPISI
+
+Kategori sayfalarında URL parametresi ile sayfalama:
+```
+https://www.vatanbilgisayar.com/cep-telefonu-modelleri/?page=2
+https://www.vatanbilgisayar.com/cep-telefonu-modelleri/?page=3
+```
+Her sayfada **24 ürün** listeleniyor.
+
+---
+
+## 7. ÖZEL BÖLÜMLER (FıRSAT TESPİTİ İÇİN)
+
+| Bölüm | URL | Özellik |
+|---|---|---|
+| Fırsat Ürünleri | `/firsat-urunler` | Hem yeni hem eski fiyat mevcut, 189 ürün |
+| Web'e Özel | `/webeozel-urunler` | Sadece siteye özel fiyatlar |
+| Outlet | `/outlet` | İkinci el/açık kutu ürünler |
+| Yenilenmiş Telefon | `/yenilenmis-telefon` | Refurb ürünler |
+| Haftanın Favorisi | Ana sayfada banner | Haftalık tek ürün kampanyası |
+
+---
+
+## 8. ANTI-BOT / RATE LIMIT NOTLARI
+
+- Site Cloudflare kullanıyor → çok hızlı istek atılırsa 403/503 dönebilir
+- `robots.txt` kontrol edilmeli
+- Makul bekleme süresi: istekler arası **2-5 saniye** önerilir
+- User-Agent değiştirme gerekebilir
+- Görüntü lazy-load kullanıyor (fiyatlar HTML'de mevcut, JS render gerektirmiyor)
+
+---
+
+## 9. AI AJANINA VERECEĞİNİZ PROMPT (Hazır Kullanıma Uygun)
+
+Aşağıdaki prompt'u, bu botu yazacak AI ajanına kopyalayıp yapıştırabilirsiniz:
+
+---
+
+```
+Sen bir Python fiyat takip botu yazacaksın. Hedef site: vatanbilgisayar.com
+
+== GÖREV ==
+1. Belirli ürünlerin fiyatlarını periyodik olarak tara
+2. Fiyat düşüşlerini tespit et
+3. Telegram veya e-posta ile bildirim gönder
+4. Tüm veriyi SQLite veritabanında sakla
+
+== SİTE TEKNİK BİLGİLERİ ==
+
+Site: https://www.vatanbilgisayar.com
+CDN: cdn.vatanbilgisayar.com
+
+URL YAPISI:
+- Ürün sayfası: https://www.vatanbilgisayar.com/{slug}.html
+  Örnek: https://www.vatanbilgisayar.com/samsung-galaxy-s25-fe-akilli-telefon.html
+- Kategori: https://www.vatanbilgisayar.com/{kategori}/
+  Sayfalama: ?page=2, ?page=3 (her sayfada 24 ürün)
+- Fırsat sayfası: https://www.vatanbilgisayar.com/firsat-urunler
+
+FİYAT VERİSİ ÇEKME YÖNTEMİ (2 seçenek, öncelik sırasıyla):
+
+Yöntem 1 - JSON-LD (Tavsiye Edilen):
+Her ürün sayfasında <script type="application/ld+json"> etiketi içinde
+Product schema var. "offers.price" alanı KURUŞsuz, noktas1z tam sayı verir.
+Örnek: {"@type":"Product","sku":"153418","offers":{"price":"35499","priceCurrency":"TRY","availability":"https://schema.org/InStock"}}
+
+Yöntem 2 - CSS Selektörler:
+Kategori liste sayfası:
+  - Kart:          .product-list--list-page
+  - Ürün adı:      .product-list__product-name
+  - SKU kodu:      .product-list__product-code
+  - Fiyat (rakam): .price-basket-camp--new-price .product-list__price
+  - Eski fiyat:    .price-basket-camp--new-price .product-list__current-price
+  - Ürün linki:    a.product-list-link (href attribute)
+
+Ürün detay sayfası:
+  - Başlık:        h1
+  - Fiyat büyük:   .product-detail-price-big
+  - SKU:           .product-list__product-code (format: "MPN / İÇ_ID")
+  - Stok:          offers.availability JSON-LD'den ("InStock"/"OutOfStock")
+  - Puan:          .wrapper-star
+
+== VERİTABANI ŞEMASI ==
+
+CREATE TABLE products (
+  id INTEGER PRIMARY KEY,
+  sku TEXT NOT NULL,          -- Vatan iç ID (örn: 153418)
+  mpn TEXT,                   -- Üretici kodu (örn: SM-S731BZKGTUR)
+  name TEXT,
+  url TEXT UNIQUE,
+  brand TEXT,
+  category TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE price_history (
+  id INTEGER PRIMARY KEY,
+  product_sku TEXT,
+  price REAL,                 -- TRY cinsinden
+  old_price REAL,             -- Varsa çizili eski fiyat
+  in_stock BOOLEAN,
+  scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (product_sku) REFERENCES products(sku)
+);
+
+CREATE TABLE alerts (
+  id INTEGER PRIMARY KEY,
+  product_sku TEXT,
+  target_price REAL,          -- Kullanıcının hedef fiyatı
+  alert_sent BOOLEAN DEFAULT FALSE,
+  created_at DATETIME
+);
+
+== BOT MİMARİSİ ==
+
+Dosya yapısı:
+  vatan_bot/
+  ├── config.py          # Ayarlar (API key, hedef URL'ler, eşik değerleri)
+  ├── scraper.py         # Ana web scraping modülü
+  ├── db.py              # SQLite veritabanı işlemleri
+  ├── notifier.py        # Telegram/e-posta bildirim
+  ├── scheduler.py       # APScheduler ile zamanlama
+  ├── main.py            # Giriş noktası
+  └── requirements.txt
+
+Kütüphaneler:
+  - requests + BeautifulSoup4 (scraping)
+  - sqlite3 (veritabanı)
+  - APScheduler (zamanlama)
+  - python-telegram-bot veya smtplib (bildirim)
+  - fake-useragent (bot tespitinden kaçınmak için)
+
+== SCRAPING KURALLARI ==
+
+1. İstekler arası 2-5 saniye rastgele bekleme ekle
+2. User-Agent'ı tarayıcı gibi ayarla (fake-useragent kullan)
+3. HTTP 429 veya 503 alınca exponential backoff uygula (1s → 2s → 4s → 8s)
+4. Session kullan, cookies sakla
+5. Cloudflare challenge sayfası gelirse 60 saniye bekle ve tekrar dene
+
+Headers örneği:
+{
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+  "Accept-Language": "tr-TR,tr;q=0.9",
+  "Accept": "text/html,application/xhtml+xml,...",
+  "Referer": "https://www.vatanbilgisayar.com/"
+}
+
+== FIRSATI TESPİT ETme KURALLARI ==
+
+Fırsat türü 1 - Fiyat Düşüşü:
+  Yeni fiyat < Son kaydedilen fiyat × (1 - THRESHOLD)
+  Örnek THRESHOLD = 0.05 → %5'ten fazla düşüş = fırsat
+
+Fırsat türü 2 - Hedef Fiyata Ulaşma:
+  Güncel fiyat ≤ alerts tablosundaki target_price
+
+Fırsat türü 3 - Fırsat Sayfasında Yeni Ürün:
+  /firsat-urunler sayfasında daha önce görülmemiş ürün
+
+Fırsat türü 4 - Tarihsel En Düşük Fiyat:
+  Güncel fiyat = MIN(price_history.price) for this SKU
+
+== BİLDİRİM FORMATI ==
+
+🔔 FİYAT DÜŞÜŞÜ ALARMI!
+────────────────────────
+📦 Samsung Galaxy S25 FE 5G 8/256 GB
+🏷️ SKU: 153418
+💰 Yeni Fiyat: 31.999 TL
+📉 Eski Fiyat: 35.499 TL
+💡 İndirim: %9.86
+🔗 Link: https://www.vatanbilgisayar.com/...
+⏰ Tespit: 04.04.2026 14:32
+
+== TAKIP EDİLECEK SAYFALAR ==
+
+Başlangıç için şu sayfaları tara:
+1. https://www.vatanbilgisayar.com/firsat-urunler (tüm sayfalar)
+2. https://www.vatanbilgisayar.com/cep-telefonu-modelleri/ (sayfa 1-5)
+3. https://www.vatanbilgisayar.com/bilgisayar/ (sayfa 1-5)
+4. Takip listesindeki spesifik ürün URL'leri
+
+== ZAMANLAMA ==
+
+- Fırsat sayfası: her 30 dakikada bir
+- Kategori sayfaları: her 2 saatte bir
+- Takip edilen ürünler: her 1 saatte bir
+- Gece 02:00-07:00 arası tarama yapma (gereksiz yük)
+
+== EK ÖZELLİKLER (opsiyonel) ==
+
+- Fiyat geçmişi grafiği (matplotlib ile PNG oluştur, Telegram'a gönder)
+- Çok kullanıcı desteği (user_id bazlı alerts tablosu)
+- Telegram bot komutu: /takip {URL} {hedef_fiyat}
+- Telegram bot komutu: /fiyat {URL} → anlık fiyat sorgula
+- Web arayüzü: Flask ile basit dashboard
+
+Şimdi bu spesifikasyona göre çalışan, tamamen fonksiyonel Python kodunu yaz.
+```
+
+---
+
+## 10. ÖZET: YAPMANIZ GEREKENLER
+
+Adım adım yapılacaklar şunlardır:
+
+**1. Altyapı kurulumu:** Yukarıdaki prompt'u bir AI kodlama ajanına (Claude, GPT-4, Cursor vb.) verin, kodu ürettirin.
+
+**2. Telegram botu oluşturun:** `@BotFather`'dan yeni bot açıp API token alın. Bu token'ı `config.py`'ye koyun.
+
+**3. Takip listesi hazırlayın:** Takip etmek istediğiniz ürünlerin `.html` URL'lerini toplayın ve `products` tablosuna ekleyin.
+
+**4. Sunucuya taşıyın:** Bot sürekli çalışması için VPS veya bir Raspberry Pi üzerinde çalıştırın.
+
+**5. Bildirim eşiğini ayarlayın:** `THRESHOLD = 0.05` ile başlayın, çok gürültülü olursa `0.10`'a çıkarın.
+
+En kritik teknik nokta şudur: Fiyatları JSON-LD'den parse etmek (Yöntem 1) CSS selector'lara göre çok daha stabil çalışır; site tasarımı değişse bile JSON-LD genellikle aynı kalır.
+
+
+
+

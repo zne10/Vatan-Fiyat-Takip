@@ -1,1 +1,10 @@
 .claude/
+.env
+__pycache__/
+*.pyc
+*.pyo
+vatan_bot/data/
+vatan_bot.log
+*.db
+.venv/
+venv/

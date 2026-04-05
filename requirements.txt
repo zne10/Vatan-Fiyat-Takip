@@ -1,0 +1,10 @@
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+APScheduler>=3.10.0
+python-dotenv>=1.0.0
+
+# Opsiyonel — kullanılacak scraper'a göre aç
+# crawl4ai>=0.4.0
+# firecrawl-py>=0.0.16
+# playwright>=1.40.0
