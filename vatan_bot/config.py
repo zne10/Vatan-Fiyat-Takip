@@ -52,14 +52,45 @@ GECE_BITIS = 7        # 07:00
 # ── Takip Edilecek Sayfalar ──
 FIRSAT_URL = "https://www.vatanbilgisayar.com/firsat-urunler"
 KATEGORI_URLS = [
+    # Telefon & Tablet
     "https://www.vatanbilgisayar.com/cep-telefonu-modelleri/",
-    "https://www.vatanbilgisayar.com/bilgisayar/",
     "https://www.vatanbilgisayar.com/tablet/",
-    "https://www.vatanbilgisayar.com/televizyon/",
-    "https://www.vatanbilgisayar.com/kulaklik/",
-    "https://www.vatanbilgisayar.com/akilli-saat/",
+    # Bilgisayar
+    "https://www.vatanbilgisayar.com/bilgisayar/",
     "https://www.vatanbilgisayar.com/oyun-bilgisayari-notebook/",
     "https://www.vatanbilgisayar.com/monitor/",
+    # TV & Ses
+    "https://www.vatanbilgisayar.com/televizyon/",
+    "https://www.vatanbilgisayar.com/kulaklik/",
+    "https://www.vatanbilgisayar.com/bluetooth-hoparlor/",
+    "https://www.vatanbilgisayar.com/soundbar/",
+    # Aksesuar & Çevre Birimleri
+    "https://www.vatanbilgisayar.com/mouse/",
+    "https://www.vatanbilgisayar.com/klavye/",
+    "https://www.vatanbilgisayar.com/gaming-mouse/",
+    "https://www.vatanbilgisayar.com/gaming-klavye/",
+    "https://www.vatanbilgisayar.com/mousepad/",
+    "https://www.vatanbilgisayar.com/gaming-kulaklik/",
+    # Giyilebilir
+    "https://www.vatanbilgisayar.com/akilli-saat/",
+    "https://www.vatanbilgisayar.com/akilli-bileklik/",
+    # Depolama
+    "https://www.vatanbilgisayar.com/tasinabilir-disk/",
+    "https://www.vatanbilgisayar.com/usb-bellek/",
+    "https://www.vatanbilgisayar.com/ssd/",
+    # Yazıcı & Kamera
+    "https://www.vatanbilgisayar.com/yazici/",
+    "https://www.vatanbilgisayar.com/fotograf-makinesi/",
+    # Ağ & Akıllı Ev
+    "https://www.vatanbilgisayar.com/router-modem/",
+    "https://www.vatanbilgisayar.com/akilli-ev/",
+    # Elektrikli Ev Aletleri
+    "https://www.vatanbilgisayar.com/elektrikli-supurge/",
+    "https://www.vatanbilgisayar.com/camasir-makinesi/",
+    "https://www.vatanbilgisayar.com/bulasik-makinesi/",
+    # Oyun
+    "https://www.vatanbilgisayar.com/playstation/",
+    "https://www.vatanbilgisayar.com/oyun-konsolu/",
 ]
 KATEGORI_MAX_SAYFA = 5
 

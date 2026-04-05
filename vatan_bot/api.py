@@ -58,17 +58,24 @@ async def handle_stats(request):
 
 
 async def handle_products(request):
-    """Tüm ürünler + son fiyat."""
+    """Tüm ürünler + son fiyat + önceki fiyat (DB'den)."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
         SELECT p.sku, p.name, p.url, p.brand, p.category, p.created_at,
-               ph.price, ph.old_price, ph.in_stock, ph.scraped_at
+               ph.price, ph.in_stock, ph.scraped_at,
+               prev.price AS prev_price
         FROM products p
         LEFT JOIN price_history ph ON ph.product_sku = p.sku
             AND ph.scraped_at = (
                 SELECT MAX(ph2.scraped_at) FROM price_history ph2
                 WHERE ph2.product_sku = p.sku
+            )
+        LEFT JOIN price_history prev ON prev.product_sku = p.sku
+            AND prev.scraped_at = (
+                SELECT MAX(ph3.scraped_at) FROM price_history ph3
+                WHERE ph3.product_sku = p.sku
+                AND ph3.scraped_at < ph.scraped_at
             )
         ORDER BY ph.scraped_at DESC
     """)
@@ -78,21 +85,27 @@ async def handle_products(request):
 
 
 async def handle_drops(request):
-    """Son 7 günde fiyatı düşen ürünler."""
+    """Son 7 günde fiyatı düşen ürünler — DB'deki önceki fiyatla karşılaştırır."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT p.sku, p.name, p.url, p.brand,
-               ph1.price AS new_price, ph1.old_price,
+        SELECT p.sku, p.name, p.url, p.brand, p.category,
+               ph1.price AS new_price,
+               prev.price AS old_price,
                ph1.scraped_at,
-               ROUND((ph1.old_price - ph1.price) / ph1.old_price * 100, 1) AS drop_pct
+               ROUND((prev.price - ph1.price) / prev.price * 100, 1) AS drop_pct
         FROM price_history ph1
         JOIN products p ON p.sku = ph1.product_sku
+        JOIN price_history prev ON prev.product_sku = ph1.product_sku
+            AND prev.scraped_at = (
+                SELECT MAX(ph2.scraped_at) FROM price_history ph2
+                WHERE ph2.product_sku = ph1.product_sku
+                AND ph2.scraped_at < ph1.scraped_at
+            )
         WHERE ph1.scraped_at > datetime('now', '-7 days')
-          AND ph1.old_price IS NOT NULL
-          AND ph1.price < ph1.old_price
+          AND ph1.price < prev.price
         ORDER BY drop_pct DESC
-        LIMIT 50
+        LIMIT 100
     """)
     drops = _rows_to_dicts(cur)
     conn.close()
