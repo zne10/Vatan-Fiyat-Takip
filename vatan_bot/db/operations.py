@@ -139,10 +139,27 @@ def mark_alert_sent(alert_id: int) -> None:
     conn.close()
 
 
-# ── Fırsat Tespiti ──
+# ── Fırsat Tespiti (Kural Tabanlı) ──
 
-def check_price_drop(product_sku: str, current_price: float, threshold: float) -> Optional[dict]:
-    """Fiyat düşüşü kontrolü. Düşüş varsa detay döner, yoksa None."""
+def _get_alert_rules() -> list[dict]:
+    """Fırsat kurallarını getirir."""
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM alert_rules ORDER BY min_price").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _get_threshold_for_price(price: float) -> float:
+    """Fiyat aralığına göre minimum düşüş eşiğini döner."""
+    rules = _get_alert_rules()
+    for rule in rules:
+        if rule["min_price"] <= price <= rule["max_price"]:
+            return rule["min_drop_pct"] / 100.0
+    return 0.05  # varsayılan %5
+
+
+def check_price_drop(product_sku: str, current_price: float, threshold: float = None) -> Optional[dict]:
+    """Fiyat düşüşü kontrolü. Kural tabanlı eşik kullanır. Düşüş varsa detay döner ve opportunity oluşturur."""
     last_price = get_last_price(product_sku)
     if last_price is None:
         return None
@@ -151,11 +168,31 @@ def check_price_drop(product_sku: str, current_price: float, threshold: float) -
         return None
 
     drop_pct = (last_price - current_price) / last_price
+
+    # Kural tabanlı eşik
+    if threshold is None:
+        threshold = _get_threshold_for_price(current_price)
+
     if drop_pct < threshold:
         return None
 
     min_price = get_min_price(product_sku)
     is_all_time_low = current_price <= (min_price or current_price)
+
+    # Ürün bilgisi
+    product = get_product(product_sku)
+
+    # Opportunity oluştur
+    create_opportunity(
+        product_sku=product_sku,
+        product_name=product["name"] if product else "",
+        brand=product.get("brand", "") if product else "",
+        category=product.get("category", "") if product else "",
+        url=product.get("url", "") if product else "",
+        old_price=last_price,
+        new_price=current_price,
+        drop_pct=round(drop_pct * 100, 1),
+    )
 
     return {
         "sku": product_sku,
@@ -164,6 +201,38 @@ def check_price_drop(product_sku: str, current_price: float, threshold: float) -
         "drop_pct": drop_pct,
         "is_all_time_low": is_all_time_low,
     }
+
+
+def create_opportunity(
+    product_sku: str,
+    product_name: str,
+    brand: str,
+    category: str,
+    url: str,
+    old_price: float,
+    new_price: float,
+    drop_pct: float,
+) -> None:
+    """Yeni fırsat kaydı oluşturur."""
+    conn = get_connection()
+    # Aynı ürün için son 1 saatte zaten fırsat oluşturulmuşsa atla
+    existing = conn.execute(
+        """SELECT id FROM opportunities
+           WHERE product_sku = ? AND detected_at > datetime('now', '-1 hour') AND dismissed = 0""",
+        (product_sku,),
+    ).fetchone()
+    if existing:
+        conn.close()
+        return
+
+    conn.execute(
+        """INSERT INTO opportunities
+           (product_sku, product_name, brand, category, url, old_price, new_price, drop_pct)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_sku, product_name, brand, category, url, old_price, new_price, drop_pct),
+    )
+    conn.commit()
+    conn.close()
 
 
 def check_target_alerts(product_sku: str, current_price: float) -> list[dict]:
