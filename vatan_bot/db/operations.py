@@ -58,16 +58,16 @@ def get_tracked_urls() -> list[str]:
 def add_price_record(
     product_sku: str,
     price: float,
-    old_price: Optional[float] = None,
     in_stock: bool = True,
 ) -> None:
+    """Sadece nihai fiyat kaydedilir. Vatan'ın kampanya eski fiyatı kaydedilmez."""
     conn = get_connection()
     conn.execute(
         """
-        INSERT INTO price_history (product_sku, price, old_price, in_stock)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO price_history (product_sku, price, in_stock, scraped_at)
+        VALUES (?, ?, ?, datetime('now', 'localtime'))
         """,
-        (product_sku, price, old_price, in_stock),
+        (product_sku, price, in_stock),
     )
     conn.commit()
     conn.close()
@@ -218,7 +218,7 @@ def create_opportunity(
     # Aynı ürün için son 1 saatte zaten fırsat oluşturulmuşsa atla
     existing = conn.execute(
         """SELECT id FROM opportunities
-           WHERE product_sku = ? AND detected_at > datetime('now', '-1 hour') AND dismissed = 0""",
+           WHERE product_sku = ? AND detected_at > datetime('now', 'localtime', '-1 hour') AND dismissed = 0""",
         (product_sku,),
     ).fetchone()
     if existing:

@@ -30,8 +30,8 @@ def init_db():
             image_url TEXT,
             description TEXT,
             data_completeness INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
         )
     """)
 
@@ -43,7 +43,7 @@ def init_db():
             price REAL NOT NULL,
             old_price REAL,
             in_stock BOOLEAN DEFAULT 1,
-            scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            scraped_at DATETIME DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (product_sku) REFERENCES products(sku)
         )
     """)
@@ -60,7 +60,7 @@ def init_db():
             old_price REAL NOT NULL,
             new_price REAL NOT NULL,
             drop_pct REAL NOT NULL,
-            detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            detected_at DATETIME DEFAULT (datetime('now','localtime')),
             dismissed BOOLEAN DEFAULT 0,
             notified BOOLEAN DEFAULT 0,
             FOREIGN KEY (product_sku) REFERENCES products(sku)
@@ -74,7 +74,7 @@ def init_db():
             product_sku TEXT NOT NULL,
             target_price REAL NOT NULL,
             alert_sent BOOLEAN DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (product_sku) REFERENCES products(sku)
         )
     """)
@@ -86,7 +86,7 @@ def init_db():
             min_price REAL DEFAULT 0,
             max_price REAL DEFAULT 999999,
             min_drop_pct REAL DEFAULT 5,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
         )
     """)
 
@@ -113,7 +113,7 @@ def init_db():
             status TEXT,
             response_time_ms INTEGER,
             error_message TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
         )
     """)
 
@@ -122,7 +122,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT (datetime('now','localtime'))
         )
     """)
 

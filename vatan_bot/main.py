@@ -145,11 +145,10 @@ def process_product(data: dict, url: str = ""):
         )
         mark_alert_sent(alert["id"])
 
-    # Fiyatı kaydet
+    # Sadece nihai fiyat kaydedilir (Vatan'ın kampanya eski fiyatı değil)
     add_price_record(
         product_sku=sku,
         price=price,
-        old_price=data.get("old_price"),
         in_stock=data.get("in_stock", True),
     )
 

@@ -51,10 +51,10 @@ def get_stats():
     c.execute("SELECT COUNT(DISTINCT product_sku) FROM price_history")
     tracked = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM price_history WHERE scraped_at > datetime('now','-24 hours')")
+    c.execute("SELECT COUNT(*) FROM price_history WHERE scraped_at > datetime('now','localtime','-24 hours')")
     scans_today = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM opportunities WHERE detected_at > datetime('now','-24 hours') AND dismissed=0")
+    c.execute("SELECT COUNT(*) FROM opportunities WHERE detected_at > datetime('now','localtime','-24 hours') AND dismissed=0")
     drops_today = c.fetchone()[0]
 
     c.execute("SELECT COUNT(*) FROM opportunities WHERE dismissed=0")
@@ -357,7 +357,7 @@ def list_services():
 def start_service(name: str):
     conn = get_connection()
     conn.execute(
-        "UPDATE services SET status='running', started_at=datetime('now') WHERE name=?",
+        "UPDATE services SET status='running', started_at=datetime('now','localtime') WHERE name=?",
         (name,),
     )
     conn.commit()
@@ -412,17 +412,17 @@ def crawler_stats():
         SELECT status, COUNT(*) as count,
                ROUND(AVG(response_time_ms)) as avg_time
         FROM crawl_logs
-        WHERE created_at > datetime('now', '-24 hours')
+        WHERE created_at > datetime('now','localtime', '-24 hours')
         GROUP BY status
     """)
     stats = _rows(c)
 
-    c.execute("SELECT COUNT(*) FROM crawl_logs WHERE created_at > datetime('now', '-24 hours')")
+    c.execute("SELECT COUNT(*) FROM crawl_logs WHERE created_at > datetime('now','localtime', '-24 hours')")
     total = c.fetchone()[0]
 
     c.execute("""
         SELECT COUNT(*) FROM crawl_logs
-        WHERE status='success' AND created_at > datetime('now', '-24 hours')
+        WHERE status='success' AND created_at > datetime('now','localtime', '-24 hours')
     """)
     success = c.fetchone()[0]
 
@@ -457,7 +457,7 @@ class SettingUpdate(BaseModel):
 def save_setting(body: SettingUpdate):
     conn = get_connection()
     conn.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) "
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now','localtime')) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
         (body.key, body.value),
     )
