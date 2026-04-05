@@ -162,7 +162,7 @@ def list_products(
     c.execute(f"""
         SELECT p.sku, p.name, p.url, p.brand, p.category, p.image_url, p.created_at,
                ph.price, ph.in_stock, ph.scraped_at,
-               prev.price AS prev_price
+               prev.price AS prev_price, prev.scraped_at AS prev_date
         FROM products p
         LEFT JOIN price_history ph ON ph.product_sku = p.sku
             AND ph.scraped_at = (SELECT MAX(scraped_at) FROM price_history WHERE product_sku = p.sku)
