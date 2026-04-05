@@ -53,7 +53,7 @@ stats = {"scanned": 0, "drops": 0, "errors": 0}
 
 
 def get_scraper() -> BaseScraper:
-    """Konfigürasyona göre aktif scraper'ı döner."""
+    """Konfigürasyona göre aktif scraper'ı döner. Varsayılan: chain (IP gizli)."""
     global scraper, proxy_manager
 
     if scraper is not None:
@@ -61,18 +61,31 @@ def get_scraper() -> BaseScraper:
 
     proxy_manager = ProxyManager()
 
-    if PRIMARY_SCRAPER == "crawl4ai":
+    if PRIMARY_SCRAPER == "chain":
+        # Fallback zinciri: Worker → Proxy → Crawl4AI (sunucu IP gizli)
+        from vatan_bot.scrapers.chain_scraper import ChainScraper
+        scraper = ChainScraper()
+    elif PRIMARY_SCRAPER == "worker":
+        from vatan_bot.scrapers.worker_scraper import WorkerScraper
+        scraper = WorkerScraper()
+    elif PRIMARY_SCRAPER == "proxy":
+        from vatan_bot.scrapers.proxy_scraper import ProxyScraper
+        scraper = ProxyScraper()
+    elif PRIMARY_SCRAPER == "crawl4ai":
         from vatan_bot.scrapers.crawl4ai_scraper import Crawl4AIScraper
         scraper = Crawl4AIScraper(proxy_manager)
     elif PRIMARY_SCRAPER == "firecrawl":
         from vatan_bot.scrapers.firecrawl_scraper import FirecrawlScraper
         scraper = FirecrawlScraper()
-    elif PRIMARY_SCRAPER == "worker":
-        from vatan_bot.scrapers.worker_scraper import WorkerScraper
-        scraper = WorkerScraper()
-    else:
+    elif PRIMARY_SCRAPER == "requests":
+        # DİKKAT: Bu mod sunucu IP'sini açığa çıkarır!
         from vatan_bot.scrapers.requests_scraper import RequestsScraper
         scraper = RequestsScraper(proxy_manager)
+        logger.warning("⚠️ requests scraper kullanılıyor — sunucu IP'si gizli DEĞİL!")
+    else:
+        # Varsayılan: chain (her zaman IP gizli)
+        from vatan_bot.scrapers.chain_scraper import ChainScraper
+        scraper = ChainScraper()
 
     return scraper
 

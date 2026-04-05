@@ -116,5 +116,6 @@ DEFAULT_HEADERS = {
 }
 
 # ── Aktif Scraper Seçimi ──
-# "crawl4ai", "firecrawl", "worker", "requests"
-PRIMARY_SCRAPER = os.getenv("PRIMARY_SCRAPER", "requests")
+# "chain" (varsayılan, IP gizli), "worker", "proxy", "crawl4ai", "firecrawl", "requests"
+# DİKKAT: "requests" sunucu IP'sini açığa çıkarır — sadece test için!
+PRIMARY_SCRAPER = os.getenv("PRIMARY_SCRAPER", "chain")
