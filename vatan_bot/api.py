@@ -160,7 +160,8 @@ def list_products(
     total = c.fetchone()[0]
 
     c.execute(f"""
-        SELECT p.sku, p.name, p.url, p.brand, p.category, p.image_url, p.created_at,
+        SELECT p.sku, p.name, p.url, p.brand, p.category, p.image_url,
+               p.created_at, p.updated_at,
                ph.price, ph.in_stock, ph.scraped_at,
                prev.price AS prev_price, prev.scraped_at AS prev_date
         FROM products p
@@ -169,7 +170,9 @@ def list_products(
         LEFT JOIN price_history prev ON prev.product_sku = p.sku
             AND prev.scraped_at = (
                 SELECT MAX(scraped_at) FROM price_history
-                WHERE product_sku = p.sku AND scraped_at < ph.scraped_at
+                WHERE product_sku = p.sku
+                AND scraped_at < ph.scraped_at
+                AND price != ph.price
             )
         {where}
         ORDER BY {sort_col} {sort_dir}

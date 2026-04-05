@@ -60,8 +60,25 @@ def add_price_record(
     price: float,
     in_stock: bool = True,
 ) -> None:
-    """Sadece nihai fiyat kaydedilir. Vatan'ın kampanya eski fiyatı kaydedilmez."""
+    """Sadece fiyat değiştiyse yeni kayıt oluşturur. Aynı fiyat tekrar kaydedilmez."""
     conn = get_connection()
+    # Son kayıtlı fiyatı kontrol et
+    row = conn.execute(
+        "SELECT price FROM price_history WHERE product_sku = ? ORDER BY scraped_at DESC LIMIT 1",
+        (product_sku,),
+    ).fetchone()
+
+    if row and row[0] == price:
+        # Fiyat aynı — sadece updated_at güncelle, yeni kayıt oluşturma
+        conn.execute(
+            "UPDATE products SET updated_at = datetime('now','localtime') WHERE sku = ?",
+            (product_sku,),
+        )
+        conn.commit()
+        conn.close()
+        return
+
+    # Fiyat değişti veya ilk kayıt — yeni price_history ekle
     conn.execute(
         """
         INSERT INTO price_history (product_sku, price, in_stock, scraped_at)
