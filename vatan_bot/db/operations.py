@@ -235,7 +235,7 @@ def create_opportunity(
     # Aynı ürün için son 1 saatte zaten fırsat oluşturulmuşsa atla
     existing = conn.execute(
         """SELECT id FROM opportunities
-           WHERE product_sku = ? AND detected_at > datetime('now', 'localtime', '-1 hour') AND dismissed = 0""",
+           WHERE product_sku = ? AND detected_at > datetime("now", "-1 hour") AND dismissed = 0""",
         (product_sku,),
     ).fetchone()
     if existing:

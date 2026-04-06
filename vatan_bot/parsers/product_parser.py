@@ -101,25 +101,34 @@ def parse_category_page(html: str) -> list[dict]:
         try:
             name_el = card.select_one(".product-list__product-name")
             sku_el = card.select_one(".product-list__product-code")
-            price_el = card.select_one(
-                ".price-basket-camp--new-price .product-list__price"
-            )
-            old_price_el = card.select_one(
-                ".price-basket-camp--new-price .product-list__current-price"
-            )
             link_el = card.select_one("a.product-list-link")
 
-            if not name_el or not price_el:
+            if not name_el:
                 continue
 
             name = name_el.get_text(strip=True)
             sku = sku_el.get_text(strip=True) if sku_el else ""
-            price = clean_price(price_el.get_text(strip=True))
-            old_price = (
-                clean_price(old_price_el.get_text(strip=True))
-                if old_price_el
-                else None
+
+            # FİYAT MANTIĞI (Doğru):
+            # .product-list__price          = gerçek/indirimli fiyat (her zaman)
+            # .product-list__current-price  = eski/üstü çizili fiyat (sadece indirimli ürünlerde)
+            old_price_el = card.select_one(
+                ".price-basket-camp--new-price .product-list__current-price"
             )
+            list_price_el = card.select_one(
+                ".price-basket-camp--new-price .product-list__price"
+            )
+            if not list_price_el:
+                list_price_el = card.select_one(".product-list__price")
+
+            price = None
+            old_price = None
+
+            if list_price_el and list_price_el.get_text(strip=True):
+                price = clean_price(list_price_el.get_text(strip=True))
+
+            if old_price_el and old_price_el.get_text(strip=True):
+                old_price = clean_price(old_price_el.get_text(strip=True))
             url = ""
             if link_el and link_el.get("href"):
                 href = link_el["href"]
@@ -186,11 +195,6 @@ def parse_product_detail(html: str) -> Optional[dict]:
         else:
             mpn = ""
 
-        old_price_el = soup.select_one(".old-price")
-        old_price = (
-            clean_price(old_price_el.get_text(strip=True)) if old_price_el else None
-        )
-
         if not price:
             return None
 
@@ -201,7 +205,6 @@ def parse_product_detail(html: str) -> Optional[dict]:
             "brand": "",
             "category": "",
             "price": price,
-            "old_price": old_price,
             "in_stock": True,
         }
     except Exception as e:

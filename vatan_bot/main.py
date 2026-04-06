@@ -113,12 +113,31 @@ def process_product(data: dict, url: str = ""):
         category=data.get("category", ""),
     )
 
-    # Fiyat düşüşü kontrolü
+    # Firsat sayfasindan gelen old_price varsa direkt opportunity olustur
+    old_price_from_page = data.get("old_price")
+    if old_price_from_page and old_price_from_page > price:
+        drop_pct_val = round((old_price_from_page - price) / old_price_from_page * 100, 1)
+        if drop_pct_val >= PRICE_DROP_THRESHOLD * 100:
+            from vatan_bot.db.operations import create_opportunity
+            create_opportunity(
+                product_sku=sku,
+                product_name=name,
+                brand=data.get("brand", ""),
+                category=data.get("category", ""),
+                url=product_url,
+                old_price=old_price_from_page,
+                new_price=price,
+                drop_pct=drop_pct_val,
+            )
+            logger.info(f"Firsat (sayfa): {name} -- {old_price_from_page} -> {price} (%{drop_pct_val})")
+            stats["drops"] += 1
+
+    # Fiyat gecmisiyle karsilastir
     drop = check_price_drop(sku, price, PRICE_DROP_THRESHOLD)
     if drop:
         logger.info(
-            f"💰 Fiyat düşüşü: {name} — "
-            f"{drop['old_price']} → {drop['new_price']} "
+            f"Fiyat dususu: {name} -- "
+            f"{drop['old_price']} -> {drop['new_price']} "
             f"(%{drop['drop_pct'] * 100:.1f})"
         )
         send_price_drop_alert(
