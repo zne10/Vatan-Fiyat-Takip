@@ -176,7 +176,7 @@ async def kategori_tarama():
     if is_night_time():
         return
 
-    logger.info("📂 [KATEGORİ] Kategori tarama başlıyor (5 paralel)...")
+    logger.info(f"📂 [KATEGORİ] Kategori tarama başlıyor ({PARALEL_WORKER} paralel)...")
     s = get_scraper()
 
     # Dinamik kategori keşfi
@@ -189,12 +189,16 @@ async def kategori_tarama():
     except Exception as e:
         logger.warning(f"[KATEGORİ] Dinamik keşif başarısız, sabit liste: {e}")
 
+    scrapers = [_new_scraper() for _ in range(PARALEL_WORKER)]
     toplam = {"urun": 0, "guncellenen": 0, "hatalar": 0, "tamamlanan": 0}
     sem = asyncio.Semaphore(PARALEL_WORKER)
+    _widx = {"i": 0}
 
     async def worker(base_url):
         async with sem:
-            sonuc = await _tara_tek_kategori_bilgi(s, base_url)
+            idx = _widx["i"] % PARALEL_WORKER
+            _widx["i"] += 1
+            sonuc = await _tara_tek_kategori_bilgi(scrapers[idx], base_url)
             toplam["urun"] += sonuc["urun"]
             toplam["guncellenen"] += sonuc["guncellenen"]
             toplam["hatalar"] += sonuc["hatalar"]
@@ -208,6 +212,12 @@ async def kategori_tarama():
     tasks = [asyncio.create_task(worker(url)) for url in kategori_urls]
     await asyncio.gather(*tasks, return_exceptions=True)
 
+    for sc in scrapers:
+        try:
+            await sc.close()
+        except Exception:
+            pass
+
     stats["scanned"] += toplam["urun"]
     logger.info(
         f"✅ [KATEGORİ] {toplam['tamamlanan']} kategori, "
@@ -219,6 +229,12 @@ async def kategori_tarama():
 # ═══════════════════════════════════════════════════════════════════
 # MODÜL 3: FİYAT TAKİP — 5 paralel worker, fark varsa sinyal
 # ═══════════════════════════════════════════════════════════════════
+
+def _new_scraper() -> BaseScraper:
+    """Her worker için yeni scraper instance oluşturur."""
+    from vatan_bot.scrapers.chain_scraper import ChainScraper
+    return ChainScraper()
+
 
 async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
     """Tek kategoriyi dolaşır, her üründe fiyat farkı varsa sinyal verir. ASLA çökmez."""
@@ -312,7 +328,7 @@ async def fiyat_tarama():
     if is_night_time():
         return
 
-    logger.info("💰 [FİYAT] Fiyat takip taraması başlıyor (5 paralel)...")
+    logger.info(f"💰 [FİYAT] Fiyat takip taraması başlıyor ({PARALEL_WORKER} paralel)...")
     s = get_scraper()
 
     # Kategori listesi
@@ -325,12 +341,18 @@ async def fiyat_tarama():
     except Exception as e:
         logger.warning(f"[FİYAT] Kategori keşfi başarısız: {e}")
 
+    # Her worker kendi scraper instance'ını oluşturur — paralel browser
+    scrapers = [_new_scraper() for _ in range(PARALEL_WORKER)]
     toplam = {"kontrol": 0, "dusus": 0, "hatalar": 0, "tamamlanan": 0}
     sem = asyncio.Semaphore(PARALEL_WORKER)
+    _worker_idx = {"i": 0}
 
     async def worker(base_url):
         async with sem:
-            sonuc = await _fiyat_kontrol_tek_kategori(s, base_url)
+            # Round-robin scraper seçimi
+            idx = _worker_idx["i"] % PARALEL_WORKER
+            _worker_idx["i"] += 1
+            sonuc = await _fiyat_kontrol_tek_kategori(scrapers[idx], base_url)
             toplam["kontrol"] += sonuc["kontrol"]
             toplam["dusus"] += sonuc["dusus"]
             toplam["hatalar"] += sonuc["hatalar"]
@@ -343,6 +365,13 @@ async def fiyat_tarama():
 
     tasks = [asyncio.create_task(worker(url)) for url in kategori_urls]
     await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Scraper'ları temizle
+    for sc in scrapers:
+        try:
+            await sc.close()
+        except Exception:
+            pass
 
     stats["scanned"] += toplam["kontrol"]
     logger.info(
