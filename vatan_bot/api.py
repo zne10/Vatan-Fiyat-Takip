@@ -80,12 +80,8 @@ def get_stats():
     """)
     scans_24h = c.fetchone()[0]
 
-    # Son tarama zamanı (fiyatlı ürünlerden)
-    c.execute("""
-        SELECT MAX(p.updated_at) FROM products p
-        WHERE EXISTS (SELECT 1 FROM price_history WHERE product_sku = p.sku)
-        AND p.updated_at != p.created_at
-    """)
+    # Son tarama zamanı
+    c.execute("SELECT MAX(scraped_at) FROM price_history")
     row = c.fetchone()
     last_scan = row[0] if row else None
 
