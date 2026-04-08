@@ -1,8 +1,21 @@
+const TOTAL_FIYAT_WORKERS = 5;
+const REPO = "/var/www/projects/vatan-repo";
+
+const fiyatWorkers = Array.from({length: TOTAL_FIYAT_WORKERS}, (_, i) => ({
+  name: `vatan-fiyat-${i}`,
+  cwd: REPO,
+  script: "python3",
+  args: `-m vatan_bot.main --mode fiyat --worker-id ${i} --total-workers ${TOTAL_FIYAT_WORKERS}`,
+  autorestart: true,
+  restart_delay: 3000,
+  max_restarts: 10000,
+}));
+
 module.exports = {
   apps: [
     {
       name: "vatan-api",
-      cwd: "/var/www/projects/vatan-repo",
+      cwd: REPO,
       script: "python3",
       args: "-m uvicorn vatan_bot.api:app --host 127.0.0.1 --port 8080",
       autorestart: true,
@@ -10,38 +23,30 @@ module.exports = {
     },
     {
       name: "vatan-kesif",
-      cwd: "/var/www/projects/vatan-repo",
+      cwd: REPO,
       script: "python3",
       args: "-m vatan_bot.main --mode kesif",
       autorestart: true,
-      restart_delay: 43200000, // bitince 12 saat bekle, tekrar çalıştır
+      restart_delay: 43200000,
       max_restarts: 100,
     },
     {
       name: "vatan-kategori",
-      cwd: "/var/www/projects/vatan-repo",
+      cwd: REPO,
       script: "python3",
       args: "-m vatan_bot.main --mode kategori",
       autorestart: true,
-      restart_delay: 7200000, // bitince 2 saat bekle, tekrar çalıştır
+      restart_delay: 7200000,
       max_restarts: 100,
     },
-    {
-      name: "vatan-fiyat",
-      cwd: "/var/www/projects/vatan-repo",
-      script: "python3",
-      args: "-m vatan_bot.main --mode fiyat",
-      autorestart: true,
-      restart_delay: 1000, // bitince 1 sn bekle, hemen tekrar başlat (aralıksız)
-      max_restarts: 10000,
-    },
+    ...fiyatWorkers,
     {
       name: "vatan-firsat",
-      cwd: "/var/www/projects/vatan-repo",
+      cwd: REPO,
       script: "python3",
       args: "-m vatan_bot.main --mode firsat",
       autorestart: true,
-      restart_delay: 1800000, // bitince 30 dk bekle, tekrar çalıştır
+      restart_delay: 1800000,
       max_restarts: 100,
     },
   ],

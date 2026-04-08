@@ -382,12 +382,16 @@ def _pm2_list() -> list[dict]:
 
 
 PM2_SERVICE_MAP = {
-    "vatan-api": {"display_name": "API Sunucu", "description": "Dashboard REST API servisi"},
-    "vatan-kesif": {"display_name": "URL Keşif", "description": "llmmap.txt'den ürün URL'lerini keşfeder (12 saatte 1)"},
-    "vatan-kategori": {"display_name": "Kategori Tarama", "description": "Kategori sayfalarını dolaşır, ürün bilgisi toplar (2 saatte 1)"},
-    "vatan-fiyat": {"display_name": "Fiyat Takip", "description": "Fiyat değişimlerini kontrol eder, düşüş varsa sinyal (aralıksız)"},
-    "vatan-firsat": {"display_name": "Fırsat Tarama", "description": "Fırsat sayfasını tarar (30 dk'da 1)"},
-    "webhook": {"display_name": "Webhook", "description": "GitHub deploy webhook (port 9000)"},
+    "vatan-api": {"display_name": "API Sunucu", "description": "Dashboard REST API"},
+    "vatan-kesif": {"display_name": "URL Keşif", "description": "llmmap.txt → DB (12 saatte 1)"},
+    "vatan-kategori": {"display_name": "Kategori Tarama", "description": "Kategori sayfaları → ürün bilgisi (2 saatte 1)"},
+    "vatan-fiyat-0": {"display_name": "Fiyat Takip #1", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
+    "vatan-fiyat-1": {"display_name": "Fiyat Takip #2", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
+    "vatan-fiyat-2": {"display_name": "Fiyat Takip #3", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
+    "vatan-fiyat-3": {"display_name": "Fiyat Takip #4", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
+    "vatan-fiyat-4": {"display_name": "Fiyat Takip #5", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
+    "vatan-firsat": {"display_name": "Fırsat Tarama", "description": "Fırsat sayfası (30 dk'da 1)"},
+    "webhook": {"display_name": "Webhook", "description": "GitHub deploy webhook"},
 }
 
 

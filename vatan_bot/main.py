@@ -319,16 +319,14 @@ async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
     return sonuc
 
 
-async def fiyat_tarama():
+async def fiyat_tarama(worker_id: int = 0, total_workers: int = 1):
     """
-    Tüm kategori sayfalarını 5 paralel worker ile dolaşır.
-    Her ürünün fiyatını DB'deki son fiyatla karşılaştırır.
-    Fark varsa → sinyal (Telegram + DB opportunity).
+    Kategori sayfalarını dolaşır, fiyat farkı varsa sinyal.
+    worker_id / total_workers ile kategoriler bölünür — paralel process'ler çakışmaz.
     """
     if is_night_time():
         return
 
-    logger.info(f"💰 [FİYAT] Fiyat takip taraması başlıyor ({PARALEL_WORKER} paralel)...")
     s = get_scraper()
 
     # Kategori listesi
@@ -337,49 +335,38 @@ async def fiyat_tarama():
         discovered = await discover_categories_from_homepage(s)
         if discovered and len(discovered) > len(KATEGORI_URLS):
             kategori_urls = [c["url"] for c in discovered]
-            logger.info(f"[FİYAT] {len(kategori_urls)} kategori taranacak")
     except Exception as e:
-        logger.warning(f"[FİYAT] Kategori keşfi başarısız: {e}")
+        logger.warning(f"[FİYAT-{worker_id}] Kategori keşfi başarısız: {e}")
 
-    # Her worker kendi scraper instance'ını oluşturur — paralel browser
-    scrapers = [_new_scraper() for _ in range(PARALEL_WORKER)]
+    # Bu worker'ın payına düşen kategoriler
+    my_urls = [u for i, u in enumerate(kategori_urls) if i % total_workers == worker_id]
+    logger.info(f"💰 [FİYAT-{worker_id}] Başlıyor — {len(my_urls)}/{len(kategori_urls)} kategori")
+
     toplam = {"kontrol": 0, "dusus": 0, "hatalar": 0, "tamamlanan": 0}
-    sem = asyncio.Semaphore(PARALEL_WORKER)
-    _worker_idx = {"i": 0}
 
-    async def worker(base_url):
-        async with sem:
-            # Round-robin scraper seçimi
-            idx = _worker_idx["i"] % PARALEL_WORKER
-            _worker_idx["i"] += 1
-            sonuc = await _fiyat_kontrol_tek_kategori(scrapers[idx], base_url)
+    for base_url in my_urls:
+        try:
+            sonuc = await _fiyat_kontrol_tek_kategori(s, base_url)
             toplam["kontrol"] += sonuc["kontrol"]
             toplam["dusus"] += sonuc["dusus"]
             toplam["hatalar"] += sonuc["hatalar"]
             toplam["tamamlanan"] += 1
-            if toplam["tamamlanan"] % 50 == 0:
+            if toplam["tamamlanan"] % 20 == 0:
                 logger.info(
-                    f"[FİYAT] İlerleme: {toplam['tamamlanan']}/{len(kategori_urls)} kategori, "
+                    f"[FİYAT-{worker_id}] {toplam['tamamlanan']}/{len(my_urls)} kategori, "
                     f"{toplam['kontrol']} kontrol, {toplam['dusus']} düşüş"
                 )
-
-    tasks = [asyncio.create_task(worker(url)) for url in kategori_urls]
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Scraper'ları temizle
-    for sc in scrapers:
-        try:
-            await sc.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[FİYAT-{worker_id}] Hata: {e}")
+            toplam["hatalar"] += 1
 
     stats["scanned"] += toplam["kontrol"]
     logger.info(
-        f"✅ [FİYAT] {toplam['tamamlanan']} kategori, "
-        f"{toplam['kontrol']} fiyat kontrolü, "
-        f"{toplam['dusus']} düşüş tespit, "
+        f"✅ [FİYAT-{worker_id}] {toplam['tamamlanan']} kategori, "
+        f"{toplam['kontrol']} fiyat, {toplam['dusus']} düşüş, "
         f"{toplam['hatalar']} hata"
     )
+    await s.close()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -536,8 +523,10 @@ def main():
         "--mode",
         choices=["once", "scheduler", "kesif", "kategori", "fiyat", "firsat"],
         default="scheduler",
-        help="Çalışma modu: once | scheduler | kesif | kategori | fiyat | firsat",
+        help="Çalışma modu",
     )
+    parser.add_argument("--worker-id", type=int, default=0, help="Worker ID (0-based)")
+    parser.add_argument("--total-workers", type=int, default=1, help="Toplam worker sayısı")
     args = parser.parse_args()
 
     init_db()
@@ -549,7 +538,7 @@ def main():
     elif args.mode == "kategori":
         asyncio.run(kategori_tarama())
     elif args.mode == "fiyat":
-        asyncio.run(fiyat_tarama())
+        asyncio.run(fiyat_tarama(worker_id=args.worker_id, total_workers=args.total_workers))
     elif args.mode == "firsat":
         asyncio.run(firsat_tarama())
     else:
