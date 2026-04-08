@@ -390,7 +390,7 @@ async def firsat_tarama():
                             name=p["name"],
                             sku=sku,
                             price=p["price"],
-                            old_price=p.get("old_price"),
+                            old_price=None,  # kampanya fiyatı kullanılmaz
                             url=p.get("url", ""),
                         )
                     # Ürünü kaydet/güncelle
