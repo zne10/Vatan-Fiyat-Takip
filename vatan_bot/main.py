@@ -244,14 +244,8 @@ async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
                     if not sku or not price:
                         continue
 
-                    # Fiyatı güncelle (değiştiyse price_history'ye yazar)
-                    try:
-                        bulk_update_products([p])
-                    except Exception:
-                        pass
-
-                    # Fiyat düşüşü kontrolü — SADECE DB'deki gerçek eski fiyatla
-                    # Sayfadaki kampanya fiyatı (üstü çizili) KULLANILMAZ
+                    # ÖNCE fiyat düşüşü kontrol et (DB'deki eski fiyatla karşılaştır)
+                    # SONRA güncelle — yoksa yeni fiyat yazılır ve düşüş tespit edilemez
                     drop = check_price_drop(sku, price, PRICE_DROP_THRESHOLD)
                     if drop:
                         logger.info(
@@ -283,6 +277,12 @@ async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
                             url=p.get("url", ""),
                         )
                         mark_alert_sent(alert["id"])
+
+                    # SONRA fiyatı DB'ye yaz (kontrol bittikten sonra)
+                    try:
+                        bulk_update_products([p])
+                    except Exception:
+                        pass
 
                     sonuc["kontrol"] += 1
                 except Exception as e:
