@@ -12,6 +12,10 @@ from vatan_bot.config import (
     KATEGORI_MAX_SAYFA,
     PRICE_DROP_THRESHOLD,
 )
+from vatan_bot.scrapers.sitemap_parser import (
+    discover_product_urls_from_sitemap,
+    discover_categories_from_homepage,
+)
 from vatan_bot.db.models import init_db
 from vatan_bot.db.operations import (
     upsert_product,
@@ -222,15 +226,27 @@ async def firsat_tarama():
 
 
 async def kategori_tarama():
-    """Kategori sayfalarını tarar."""
+    """Kategori sayfalarını tarar — sayfa limiti YOK, son sayfaya kadar gider."""
     if is_night_time():
         return
 
     logger.info("🔍 Kategori sayfaları taranıyor...")
     s = get_scraper()
 
-    for base_url in KATEGORI_URLS:
-        for page in range(1, KATEGORI_MAX_SAYFA + 1):
+    # Önce dinamik kategori keşfi dene, başarısız olursa sabit listeyi kullan
+    kategori_urls = KATEGORI_URLS
+    try:
+        discovered = await discover_categories_from_homepage(s)
+        if discovered and len(discovered) > len(KATEGORI_URLS):
+            kategori_urls = [c["url"] for c in discovered]
+            logger.info(f"Dinamik keşif: {len(kategori_urls)} kategori (sabit: {len(KATEGORI_URLS)})")
+    except Exception as e:
+        logger.warning(f"Dinamik kategori keşfi başarısız, sabit liste kullanılıyor: {e}")
+
+    toplam_urun = 0
+    for base_url in kategori_urls:
+        page = 1
+        while True:
             url = base_url if page == 1 else f"{base_url}?page={page}"
             html = await s.fetch_html(url)
 
@@ -245,14 +261,71 @@ async def kategori_tarama():
             for p in products:
                 try:
                     process_product(p)
+                    toplam_urun += 1
                 except Exception as e:
                     logger.error(f"Ürün işleme hatası: {e}")
                     stats["errors"] += 1
 
+            # Son sayfa kontrolü: 24'ten az ürün varsa bu son sayfa
             if len(products) < 24:
                 break
 
-    logger.info("✅ Kategori tarama tamamlandı")
+            page += 1
+
+            # Güvenlik limiti: 50 sayfa (1200 ürün/kategori)
+            if page > 50:
+                logger.warning(f"Sayfa limiti aşıldı (50): {base_url}")
+                break
+
+    logger.info(f"✅ Kategori tarama tamamlandı — {toplam_urun} ürün işlendi")
+
+
+async def sitemap_tarama():
+    """Sitemap'ten tüm ürün URL'lerini keşfeder ve detay sayfalarını tarar."""
+    if is_night_time():
+        return
+
+    logger.info("🗺️ Sitemap keşfi başlıyor...")
+    s = get_scraper()
+
+    try:
+        product_urls = await discover_product_urls_from_sitemap(s)
+    except Exception as e:
+        logger.error(f"Sitemap keşfi başarısız: {e}")
+        return
+
+    if not product_urls:
+        logger.warning("Sitemap'ten ürün URL'si bulunamadı")
+        return
+
+    # Mevcut DB'deki URL'lerle karşılaştır — sadece yenileri tara
+    existing_urls = set(get_tracked_urls())
+    new_urls = [u for u in product_urls if u not in existing_urls]
+
+    logger.info(
+        f"Sitemap: {len(product_urls)} ürün URL'si bulundu, "
+        f"{len(new_urls)} yeni, {len(existing_urls)} mevcut"
+    )
+
+    # Yeni ürünlerin detay sayfalarını tara
+    for i, url in enumerate(new_urls, 1):
+        html = await s.fetch_html(url)
+        if not html:
+            stats["errors"] += 1
+            continue
+
+        data = parse_product_detail(html)
+        if data:
+            try:
+                process_product(data, url)
+            except Exception as e:
+                logger.error(f"Sitemap ürün işleme hatası: {e}")
+                stats["errors"] += 1
+
+        if i % 100 == 0:
+            logger.info(f"Sitemap tarama: {i}/{len(new_urls)} işlendi")
+
+    logger.info(f"✅ Sitemap tarama tamamlandı — {len(new_urls)} yeni ürün tarandı")
 
 
 async def urun_tarama():
@@ -306,6 +379,7 @@ async def run_once():
     init_db()
     logger.info("🚀 Tek seferlik tarama başlıyor...")
 
+    await sitemap_tarama()
     await firsat_tarama()
     await kategori_tarama()
     await urun_tarama()
@@ -325,6 +399,7 @@ async def run_scheduler():
         firsat_job=firsat_tarama,
         kategori_job=kategori_tarama,
         urun_job=urun_tarama,
+        sitemap_job=sitemap_tarama,
     )
 
     # Günlük rapor: 09:00
@@ -340,6 +415,7 @@ async def run_scheduler():
     logger.info("⏰ Zamanlayıcı başlatıldı")
 
     # İlk taramayı hemen yap
+    await sitemap_tarama()
     await firsat_tarama()
     await kategori_tarama()
     await urun_tarama()
@@ -361,7 +437,7 @@ def main():
     parser = argparse.ArgumentParser(description="Vatan Fiyat Takip Botu")
     parser.add_argument(
         "--mode",
-        choices=["once", "scheduler", "firsat", "kategori", "urun"],
+        choices=["once", "scheduler", "firsat", "kategori", "urun", "sitemap"],
         default="scheduler",
         help="Çalışma modu",
     )
@@ -378,6 +454,9 @@ def main():
     elif args.mode == "urun":
         init_db()
         asyncio.run(urun_tarama())
+    elif args.mode == "sitemap":
+        init_db()
+        asyncio.run(sitemap_tarama())
     else:
         asyncio.run(run_scheduler())
 

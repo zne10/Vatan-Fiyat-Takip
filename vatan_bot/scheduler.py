@@ -28,6 +28,7 @@ def create_scheduler(
     firsat_job,
     kategori_job,
     urun_job,
+    sitemap_job=None,
 ) -> AsyncIOScheduler:
     """Zamanlayıcıyı oluşturur ve görevleri ekler."""
     scheduler = AsyncIOScheduler()
@@ -59,6 +60,16 @@ def create_scheduler(
         max_instances=1,
     )
 
+    # Sitemap keşfi: günde 2 kez (06:00 ve 18:00)
+    if sitemap_job:
+        scheduler.add_job(
+            sitemap_job,
+            CronTrigger(hour="8,20", minute=0),
+            id="sitemap_tarama",
+            name="Sitemap Ürün Keşfi",
+            max_instances=1,
+        )
+
     # Günlük durum raporu: her gün 09:00
     # (main.py'de eklenir)
 
@@ -66,7 +77,8 @@ def create_scheduler(
         f"Zamanlayıcı oluşturuldu: "
         f"fırsat={FIRSAT_INTERVAL_MINUTES}dk, "
         f"kategori={KATEGORI_INTERVAL_HOURS}sa, "
-        f"ürün={URUN_INTERVAL_HOURS}sa"
+        f"ürün={URUN_INTERVAL_HOURS}sa, "
+        f"sitemap=günde 2x"
     )
 
     return scheduler

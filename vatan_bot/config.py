@@ -92,7 +92,8 @@ KATEGORI_URLS = [
     "https://www.vatanbilgisayar.com/playstation/",
     "https://www.vatanbilgisayar.com/oyun-konsolu/",
 ]
-KATEGORI_MAX_SAYFA = 5
+# Eski limit — artık main.py'de sınırsız tarama yapılıyor (güvenlik limiti: 50 sayfa)
+KATEGORI_MAX_SAYFA = 50
 
 # ── HTTP Headers ──
 DEFAULT_HEADERS = {
