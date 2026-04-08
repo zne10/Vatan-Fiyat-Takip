@@ -111,15 +111,21 @@ def bulk_update_products(updates: list[dict]) -> int:
 
         if row:
             db_sku = row[0]
-            # SKU güncelleme: url-xxx → gerçek SKU
             new_sku = db_sku
+
+            # SKU güncelleme: url-xxx → gerçek SKU
             if db_sku.startswith("url-") and sku and not sku.startswith("url-"):
-                # Önce price_history'deki eski SKU'ları güncelle
-                conn.execute(
-                    "UPDATE price_history SET product_sku = ? WHERE product_sku = ?",
-                    (sku, db_sku),
-                )
-                new_sku = sku
+                # Gerçek SKU zaten başka satırda var mı?
+                existing = conn.execute("SELECT sku FROM products WHERE sku = ?", (sku,)).fetchone()
+                if existing:
+                    # Çakışma — url- kaydını sil, gerçek SKU kaydını güncelle
+                    conn.execute("DELETE FROM price_history WHERE product_sku = ?", (db_sku,))
+                    conn.execute("DELETE FROM products WHERE sku = ?", (db_sku,))
+                    new_sku = sku
+                else:
+                    # Çakışma yok — SKU'yu güncelle
+                    conn.execute("UPDATE price_history SET product_sku = ? WHERE product_sku = ?", (sku, db_sku))
+                    new_sku = sku
 
             # Ürün bilgilerini güncelle
             conn.execute(
@@ -131,7 +137,7 @@ def bulk_update_products(updates: list[dict]) -> int:
                     data_completeness = 1,
                     updated_at = datetime('now','localtime')
                    WHERE sku = ?""",
-                (new_sku, p.get("name", ""), p.get("brand", ""), p.get("category", ""), db_sku),
+                (new_sku, p.get("name", ""), p.get("brand", ""), p.get("category", ""), new_sku),
             )
 
             # Fiyat kontrolü — her zaman güncel SKU kullan
