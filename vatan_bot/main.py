@@ -166,22 +166,56 @@ async def detay_tarama(worker_id: int = 0, total_workers: int = 1):
                     sku = data.get("sku", "")
                     if not sku:
                         continue
-                    # URL ile mevcut ürünü bul, SKU'yu ve bilgileri güncelle
-                    upsert_product(
-                        sku=sku,
-                        name=data.get("name", ""),
-                        url=url,
-                        brand=data.get("brand", ""),
-                        category=data.get("category", ""),
-                    )
-                    add_price_record(sku, data["price"], data.get("in_stock", True))
-                    # Eski url- kaydını temizle
+
                     from vatan_bot.db.models import get_connection
                     conn = get_connection()
-                    conn.execute("DELETE FROM products WHERE url = ? AND sku LIKE 'url-%'", (url,))
-                    conn.commit()
+
+                    # URL ile mevcut url- kaydını bul
+                    existing = conn.execute(
+                        "SELECT sku FROM products WHERE url = ?", (url,)
+                    ).fetchone()
+
+                    if existing and existing[0].startswith("url-"):
+                        old_sku = existing[0]
+                        # Gerçek SKU zaten var mı?
+                        real_exists = conn.execute(
+                            "SELECT 1 FROM products WHERE sku = ?", (sku,)
+                        ).fetchone()
+
+                        if real_exists:
+                            # Gerçek SKU mevcut, url- kaydını sil
+                            conn.execute("DELETE FROM products WHERE sku = ?", (old_sku,))
+                        else:
+                            # url- → gerçek SKU güncelle
+                            conn.execute(
+                                """UPDATE products SET
+                                    sku = ?, name = ?, brand = COALESCE(NULLIF(?, ''), brand),
+                                    category = COALESCE(NULLIF(?, ''), category),
+                                    data_completeness = 1, updated_at = datetime('now','localtime')
+                                WHERE sku = ?""",
+                                (sku, data.get("name", ""), data.get("brand", ""),
+                                 data.get("category", ""), old_sku),
+                            )
+
+                        # Fiyat kaydet
+                        conn.execute(
+                            "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
+                            (sku, data["price"], data.get("in_stock", True)),
+                        )
+                        conn.commit()
+                        taranan += 1
+                    elif existing:
+                        # Zaten gerçek SKU ile kayıtlı — sadece fiyat güncelle
+                        add_price_record(existing[0], data["price"], data.get("in_stock", True))
+                        taranan += 1
+                    else:
+                        # DB'de yok — yeni kayıt
+                        upsert_product(sku=sku, name=data.get("name", ""), url=url,
+                                       brand=data.get("brand", ""), category=data.get("category", ""))
+                        add_price_record(sku, data["price"], data.get("in_stock", True))
+                        taranan += 1
+
                     conn.close()
-                    taranan += 1
                 except Exception as e:
                     logger.error(f"[DETAY-{worker_id}] DB hatası: {e}")
                     hatalar += 1
