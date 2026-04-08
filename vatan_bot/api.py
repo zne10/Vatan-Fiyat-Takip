@@ -381,18 +381,23 @@ def _pm2_list() -> list[dict]:
         return []
 
 
-PM2_SERVICE_MAP = {
-    "vatan-api": {"display_name": "API Sunucu", "description": "Dashboard REST API"},
-    "vatan-kesif": {"display_name": "URL Keşif", "description": "llmmap.txt → DB (12 saatte 1)"},
-    "vatan-kategori": {"display_name": "Kategori Tarama", "description": "Kategori sayfaları → ürün bilgisi (2 saatte 1)"},
-    "vatan-fiyat-0": {"display_name": "Fiyat Takip #1", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
-    "vatan-fiyat-1": {"display_name": "Fiyat Takip #2", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
-    "vatan-fiyat-2": {"display_name": "Fiyat Takip #3", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
-    "vatan-fiyat-3": {"display_name": "Fiyat Takip #4", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
-    "vatan-fiyat-4": {"display_name": "Fiyat Takip #5", "description": "Fiyat kontrol, düşüş → sinyal (aralıksız)"},
-    "vatan-firsat": {"display_name": "Fırsat Tarama", "description": "Fırsat sayfası (30 dk'da 1)"},
-    "webhook": {"display_name": "Webhook", "description": "GitHub deploy webhook"},
-}
+def _get_service_meta(name):
+    """PM2 process adından display_name ve description döner."""
+    static = {
+        "vatan-api": ("API Sunucu", "Dashboard REST API"),
+        "vatan-kesif": ("URL Keşif", "llmmap.txt → DB (12 saatte 1)"),
+        "vatan-firsat": ("Fırsat Tarama", "Fırsat sayfası (30 dk'da 1)"),
+        "webhook": ("Webhook", "GitHub deploy webhook"),
+    }
+    if name in static:
+        return {"display_name": static[name][0], "description": static[name][1]}
+    if name.startswith("vatan-fiyat-"):
+        n = int(name.split("-")[-1]) + 1
+        return {"display_name": f"Fiyat Takip #{n}", "description": "Kategori fiyat kontrol (aralıksız)"}
+    if name.startswith("vatan-detay-"):
+        n = int(name.split("-")[-1]) + 1
+        return {"display_name": f"Detay Tarama #{n}", "description": "Fiyatsız ürünlerin detay sayfası (aralıksız)"}
+    return {"display_name": name, "description": ""}
 
 
 @app.get("/api/services")
@@ -401,7 +406,7 @@ def list_services():
     services = []
     for proc in pm2_processes:
         name = proc.get("name", "")
-        meta = PM2_SERVICE_MAP.get(name, {"display_name": name, "description": ""})
+        meta = _get_service_meta(name)
         env = proc.get("pm2_env", {})
         monit = proc.get("monit", {})
         status = env.get("status", "stopped")

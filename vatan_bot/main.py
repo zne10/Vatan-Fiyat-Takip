@@ -28,6 +28,7 @@ from vatan_bot.db.operations import (
     add_price_record,
     get_product,
     get_tracked_urls,
+    get_unpriced_urls,
     check_price_drop,
     check_target_alerts,
     mark_alert_sent,
@@ -128,102 +129,63 @@ async def kesif_tarama():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# MODÜL 2: KATEGORİ — kategori sayfalarını dolaş → ürün bilgileri
+# MODÜL 2: DETAY — fiyatsız ürünlerin detay sayfalarını tarar
 # ═══════════════════════════════════════════════════════════════════
 
-async def _tara_tek_kategori_bilgi(s, base_url: str) -> dict:
-    """Tek kategoriyi tüm sayfalarıyla tarar — ürün bilgisi + ilk fiyat. ASLA çökmez."""
-    sonuc = {"urun": 0, "guncellenen": 0, "hatalar": 0}
-    page = 1
-
-    while True:
-        try:
-            url = base_url if page == 1 else f"{base_url}?page={page}"
-            html = await s.fetch_html(url)
-
-            if not html:
-                break
-
-            products = parse_category_page(html)
-            if not products:
-                break
-
-            try:
-                updated = bulk_update_products(products)
-                sonuc["guncellenen"] += updated
-            except Exception as e:
-                logger.error(f"[KATEGORİ] DB hatası ({base_url} p{page}): {e}")
-                sonuc["hatalar"] += 1
-
-            sonuc["urun"] += len(products)
-
-            if len(products) < 24:
-                break
-            page += 1
-            if page > 50:
-                break
-
-        except Exception as e:
-            logger.error(f"[KATEGORİ] Sayfa hatası ({base_url} p{page}): {e}")
-            sonuc["hatalar"] += 1
-            break
-
-    return sonuc
-
-
-async def kategori_tarama():
-    """Kategori sayfalarını 5 paralel worker ile dolaş. Ürün bilgisi + ilk fiyat kaydı."""
+async def detay_tarama(worker_id: int = 0, total_workers: int = 1):
+    """
+    DB'de fiyatı olmayan ürünlerin detay sayfalarını tarar.
+    llmmap.txt'den gelen ama kategori sayfasında çıkmayan ürünler için.
+    """
     if is_night_time():
         return
 
-    logger.info(f"📂 [KATEGORİ] Kategori tarama başlıyor ({PARALEL_WORKER} paralel)...")
+    all_urls = get_unpriced_urls(limit=10000)
+    # Bu worker'ın payı
+    my_urls = [u for i, u in enumerate(all_urls) if i % total_workers == worker_id]
+
+    if not my_urls:
+        logger.info(f"[DETAY-{worker_id}] Fiyatsız ürün kalmadı")
+        return
+
+    logger.info(f"📦 [DETAY-{worker_id}] {len(my_urls)}/{len(all_urls)} fiyatsız ürün taranacak")
     s = get_scraper()
+    taranan = 0
+    hatalar = 0
 
-    # Dinamik kategori keşfi
-    kategori_urls = KATEGORI_URLS
-    try:
-        discovered = await discover_categories_from_homepage(s)
-        if discovered and len(discovered) > len(KATEGORI_URLS):
-            kategori_urls = [c["url"] for c in discovered]
-            logger.info(f"[KATEGORİ] Dinamik keşif: {len(kategori_urls)} kategori")
-    except Exception as e:
-        logger.warning(f"[KATEGORİ] Dinamik keşif başarısız, sabit liste: {e}")
-
-    scrapers = [_new_scraper() for _ in range(PARALEL_WORKER)]
-    toplam = {"urun": 0, "guncellenen": 0, "hatalar": 0, "tamamlanan": 0}
-    sem = asyncio.Semaphore(PARALEL_WORKER)
-    _widx = {"i": 0}
-
-    async def worker(base_url):
-        async with sem:
-            idx = _widx["i"] % PARALEL_WORKER
-            _widx["i"] += 1
-            sonuc = await _tara_tek_kategori_bilgi(scrapers[idx], base_url)
-            toplam["urun"] += sonuc["urun"]
-            toplam["guncellenen"] += sonuc["guncellenen"]
-            toplam["hatalar"] += sonuc["hatalar"]
-            toplam["tamamlanan"] += 1
-            if toplam["tamamlanan"] % 50 == 0:
-                logger.info(
-                    f"[KATEGORİ] İlerleme: {toplam['tamamlanan']}/{len(kategori_urls)} kategori, "
-                    f"{toplam['urun']} ürün"
-                )
-
-    tasks = [asyncio.create_task(worker(url)) for url in kategori_urls]
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    for sc in scrapers:
+    for i, url in enumerate(my_urls):
         try:
-            await sc.close()
-        except Exception:
-            pass
+            html = await s.fetch_html(url)
+            if not html:
+                hatalar += 1
+                continue
 
-    stats["scanned"] += toplam["urun"]
-    logger.info(
-        f"✅ [KATEGORİ] {toplam['tamamlanan']} kategori, "
-        f"{toplam['urun']} ürün, {toplam['guncellenen']} güncellendi, "
-        f"{toplam['hatalar']} hata"
-    )
+            data = parse_product_detail(html, url=url)
+            if data and data.get("price", 0) > 0:
+                try:
+                    bulk_update_products([{
+                        "url": url,
+                        "sku": data.get("sku", ""),
+                        "name": data.get("name", ""),
+                        "price": data["price"],
+                        "brand": data.get("brand", ""),
+                        "category": data.get("category", ""),
+                        "in_stock": data.get("in_stock", True),
+                    }])
+                    taranan += 1
+                except Exception as e:
+                    logger.error(f"[DETAY-{worker_id}] DB hatası: {e}")
+                    hatalar += 1
+
+            if (i + 1) % 50 == 0:
+                logger.info(f"[DETAY-{worker_id}] {i+1}/{len(my_urls)} tarandi, {taranan} fiyat bulundu")
+
+        except Exception as e:
+            logger.error(f"[DETAY-{worker_id}] Hata: {e}")
+            hatalar += 1
+
+    logger.info(f"✅ [DETAY-{worker_id}] {taranan} fiyat bulundu, {hatalar} hata, {len(my_urls)} tarandı")
+    await s.close()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -467,8 +429,8 @@ async def run_once():
     logger.info("🚀 Tek seferlik tam tarama başlıyor...")
 
     await kesif_tarama()
-    await kategori_tarama()
     await fiyat_tarama()
+    await detay_tarama()
     await firsat_tarama()
 
     logger.info("✅ Tek seferlik tarama tamamlandı")
@@ -483,8 +445,8 @@ async def run_scheduler():
 
     scheduler = create_scheduler(
         firsat_job=firsat_tarama,
-        kategori_job=kategori_tarama,
-        urun_job=fiyat_tarama,
+        kategori_job=fiyat_tarama,
+        urun_job=detay_tarama,
         sitemap_job=kesif_tarama,
     )
 
@@ -501,8 +463,8 @@ async def run_scheduler():
 
     # İlk taramayı hemen yap
     await kesif_tarama()
-    await kategori_tarama()
     await fiyat_tarama()
+    await detay_tarama()
     await firsat_tarama()
 
     try:
@@ -521,9 +483,9 @@ def main():
     parser = argparse.ArgumentParser(description="Vatan Fiyat Takip Botu")
     parser.add_argument(
         "--mode",
-        choices=["once", "scheduler", "kesif", "kategori", "fiyat", "firsat"],
+        choices=["once", "scheduler", "kesif", "fiyat", "detay", "firsat"],
         default="scheduler",
-        help="Çalışma modu",
+        help="kesif=URL keşfi | fiyat=fiyat takip | detay=fiyatsız ürün tarama | firsat=fırsat sayfası",
     )
     parser.add_argument("--worker-id", type=int, default=0, help="Worker ID (0-based)")
     parser.add_argument("--total-workers", type=int, default=1, help="Toplam worker sayısı")
@@ -535,10 +497,10 @@ def main():
         asyncio.run(run_once())
     elif args.mode == "kesif":
         asyncio.run(kesif_tarama())
-    elif args.mode == "kategori":
-        asyncio.run(kategori_tarama())
     elif args.mode == "fiyat":
         asyncio.run(fiyat_tarama(worker_id=args.worker_id, total_workers=args.total_workers))
+    elif args.mode == "detay":
+        asyncio.run(detay_tarama(worker_id=args.worker_id, total_workers=args.total_workers))
     elif args.mode == "firsat":
         asyncio.run(firsat_tarama())
     else:

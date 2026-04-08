@@ -186,6 +186,20 @@ def bulk_update_products(updates: list[dict]) -> int:
     return updated
 
 
+def get_unpriced_urls(limit: int = 500) -> list[str]:
+    """Fiyat kaydı olmayan ürünlerin URL'lerini döner."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT url FROM products
+           WHERE url IS NOT NULL AND url != ''
+           AND sku NOT IN (SELECT DISTINCT product_sku FROM price_history)
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+
 def get_product(sku: str) -> Optional[dict]:
     conn = get_connection()
     row = conn.execute("SELECT * FROM products WHERE sku = ?", (sku,)).fetchone()

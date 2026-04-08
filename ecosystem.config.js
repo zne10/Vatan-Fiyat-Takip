@@ -1,13 +1,26 @@
-const TOTAL_FIYAT_WORKERS = 5;
 const REPO = "/var/www/projects/vatan-repo";
+const FIYAT_WORKERS = 5;
+const DETAY_WORKERS = 3;
 
-const fiyatWorkers = Array.from({length: TOTAL_FIYAT_WORKERS}, (_, i) => ({
+// Fiyat worker'ları — kategori sayfalarından fiyat takip (aralıksız)
+const fiyatApps = Array.from({length: FIYAT_WORKERS}, (_, i) => ({
   name: `vatan-fiyat-${i}`,
   cwd: REPO,
   script: "python3",
-  args: `-m vatan_bot.main --mode fiyat --worker-id ${i} --total-workers ${TOTAL_FIYAT_WORKERS}`,
+  args: `-m vatan_bot.main --mode fiyat --worker-id ${i} --total-workers ${FIYAT_WORKERS}`,
   autorestart: true,
   restart_delay: 3000,
+  max_restarts: 10000,
+}));
+
+// Detay worker'ları — fiyatsız ürünlerin detay sayfalarını tarar
+const detayApps = Array.from({length: DETAY_WORKERS}, (_, i) => ({
+  name: `vatan-detay-${i}`,
+  cwd: REPO,
+  script: "python3",
+  args: `-m vatan_bot.main --mode detay --worker-id ${i} --total-workers ${DETAY_WORKERS}`,
+  autorestart: true,
+  restart_delay: 5000,
   max_restarts: 10000,
 }));
 
@@ -30,16 +43,8 @@ module.exports = {
       restart_delay: 43200000,
       max_restarts: 100,
     },
-    {
-      name: "vatan-kategori",
-      cwd: REPO,
-      script: "python3",
-      args: "-m vatan_bot.main --mode kategori",
-      autorestart: true,
-      restart_delay: 7200000,
-      max_restarts: 100,
-    },
-    ...fiyatWorkers,
+    ...fiyatApps,
+    ...detayApps,
     {
       name: "vatan-firsat",
       cwd: REPO,
