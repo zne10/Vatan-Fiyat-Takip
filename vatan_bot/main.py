@@ -15,6 +15,7 @@ from vatan_bot.config import (
 from vatan_bot.scrapers.sitemap_parser import (
     discover_product_urls_from_sitemap,
     discover_categories_from_homepage,
+    fetch_llmmap,
 )
 from vatan_bot.db.models import init_db
 from vatan_bot.db.operations import (
@@ -26,6 +27,8 @@ from vatan_bot.db.operations import (
     check_target_alerts,
     mark_alert_sent,
     get_all_products,
+    bulk_register_urls,
+    bulk_update_products,
 )
 from vatan_bot.parsers.product_parser import parse_category_page, parse_product_detail
 from vatan_bot.proxy.manager import ProxyManager
@@ -226,14 +229,17 @@ async def firsat_tarama():
 
 
 async def kategori_tarama():
-    """Kategori sayfalarını tarar — sayfa limiti YOK, son sayfaya kadar gider."""
+    """
+    ADIM 2: Kategori sayfalarını dolaş → her sayfada 24 ürünün adı, fiyatı, SKU'su var.
+    Fiyat değişimi varsa sinyal verir. Sayfa limiti YOK.
+    """
     if is_night_time():
         return
 
-    logger.info("🔍 Kategori sayfaları taranıyor...")
+    logger.info("🔍 Adım 2: Kategori sayfaları taranıyor (fiyat + stok)...")
     s = get_scraper()
 
-    # Önce dinamik kategori keşfi dene, başarısız olursa sabit listeyi kullan
+    # Dinamik kategori keşfi dene, başarısız olursa sabit listeyi kullan
     kategori_urls = KATEGORI_URLS
     try:
         discovered = await discover_categories_from_homepage(s)
@@ -244,6 +250,8 @@ async def kategori_tarama():
         logger.warning(f"Dinamik kategori keşfi başarısız, sabit liste kullanılıyor: {e}")
 
     toplam_urun = 0
+    toplam_guncellenen = 0
+
     for base_url in kategori_urls:
         page = 1
         while True:
@@ -258,74 +266,92 @@ async def kategori_tarama():
             if not products:
                 break
 
+            # Toplu güncelle — fiyat farkı varsa price_history'ye yazar
+            updated = bulk_update_products(products)
+            toplam_guncellenen += updated
+
+            # Fiyat düşüşü kontrolü (sinyal)
             for p in products:
                 try:
-                    process_product(p)
+                    sku = p.get("sku", "")
+                    price = p.get("price")
+                    if not sku or not price:
+                        continue
+
+                    # Fiyat düşüşü var mı?
+                    drop = check_price_drop(sku, price, PRICE_DROP_THRESHOLD)
+                    if drop:
+                        logger.info(
+                            f"💰 Fiyat düşüşü: {p.get('name', '')} — "
+                            f"{drop['old_price']} → {drop['new_price']} "
+                            f"(%{drop['drop_pct'] * 100:.1f})"
+                        )
+                        send_price_drop_alert(
+                            name=p.get("name", ""),
+                            sku=sku,
+                            new_price=drop["new_price"],
+                            old_price=drop["old_price"],
+                            drop_pct=drop["drop_pct"],
+                            url=p.get("url", ""),
+                            is_all_time_low=drop["is_all_time_low"],
+                        )
+                        stats["drops"] += 1
+
+                    # Fırsat sayfasından gelen eski fiyat kontrolü
+                    old_price = p.get("old_price")
+                    if old_price and old_price > price:
+                        drop_pct_val = round((old_price - price) / old_price * 100, 1)
+                        if drop_pct_val >= PRICE_DROP_THRESHOLD * 100:
+                            from vatan_bot.db.operations import create_opportunity
+                            create_opportunity(
+                                product_sku=sku,
+                                product_name=p.get("name", ""),
+                                brand=p.get("brand", ""),
+                                category=p.get("category", ""),
+                                url=p.get("url", ""),
+                                old_price=old_price,
+                                new_price=price,
+                                drop_pct=drop_pct_val,
+                            )
+                            stats["drops"] += 1
+
                     toplam_urun += 1
                 except Exception as e:
-                    logger.error(f"Ürün işleme hatası: {e}")
+                    logger.error(f"Ürün sinyal hatası: {e}")
                     stats["errors"] += 1
 
-            # Son sayfa kontrolü: 24'ten az ürün varsa bu son sayfa
             if len(products) < 24:
                 break
-
             page += 1
-
-            # Güvenlik limiti: 50 sayfa (1200 ürün/kategori)
             if page > 50:
-                logger.warning(f"Sayfa limiti aşıldı (50): {base_url}")
                 break
 
-    logger.info(f"✅ Kategori tarama tamamlandı — {toplam_urun} ürün işlendi")
+    stats["scanned"] += toplam_urun
+    logger.info(f"✅ Adım 2 tamamlandı — {toplam_urun} ürün, {toplam_guncellenen} güncellendi")
 
 
 async def sitemap_tarama():
-    """Sitemap'ten tüm ürün URL'lerini keşfeder ve detay sayfalarını tarar."""
-    if is_night_time():
-        return
-
-    logger.info("🗺️ Sitemap keşfi başlıyor...")
+    """
+    ADIM 1: llmmap.txt'den tüm ürün + kategori URL'lerini çek ve DB'ye kaydet.
+    Tek istek, saniyeler içinde binlerce URL kaydedilir. Fiyat bilgisi YOK — sadece URL.
+    """
+    logger.info("🗺️ Adım 1: URL keşfi ve toplu DB kaydı...")
     s = get_scraper()
 
     try:
-        product_urls = await discover_product_urls_from_sitemap(s)
+        product_urls, category_urls = await fetch_llmmap(s)
     except Exception as e:
-        logger.error(f"Sitemap keşfi başarısız: {e}")
+        logger.error(f"llmmap.txt keşfi başarısız: {e}")
         return
 
     if not product_urls:
-        logger.warning("Sitemap'ten ürün URL'si bulunamadı")
+        logger.warning("llmmap.txt'den ürün URL'si bulunamadı")
         return
 
-    # Mevcut DB'deki URL'lerle karşılaştır — sadece yenileri tara
-    existing_urls = set(get_tracked_urls())
-    new_urls = [u for u in product_urls if u not in existing_urls]
-
-    logger.info(
-        f"Sitemap: {len(product_urls)} ürün URL'si bulundu, "
-        f"{len(new_urls)} yeni, {len(existing_urls)} mevcut"
-    )
-
-    # Yeni ürünlerin detay sayfalarını tara
-    for i, url in enumerate(new_urls, 1):
-        html = await s.fetch_html(url)
-        if not html:
-            stats["errors"] += 1
-            continue
-
-        data = parse_product_detail(html, url=url)
-        if data:
-            try:
-                process_product(data, url)
-            except Exception as e:
-                logger.error(f"Sitemap ürün işleme hatası: {e}")
-                stats["errors"] += 1
-
-        if i % 100 == 0:
-            logger.info(f"Sitemap tarama: {i}/{len(new_urls)} işlendi")
-
-    logger.info(f"✅ Sitemap tarama tamamlandı — {len(new_urls)} yeni ürün tarandı")
+    # Ürün URL'lerini toplu kaydet
+    product_rows = [{"url": u, "category": ""} for u in product_urls]
+    added = bulk_register_urls(product_rows)
+    logger.info(f"✅ Adım 1 tamamlandı: {len(product_urls)} URL'den {added} yeni ürün DB'ye kaydedildi")
 
 
 async def urun_tarama():
@@ -375,14 +401,16 @@ async def gunluk_rapor():
 # ── Ana Çalıştırma ──
 
 async def run_once():
-    """Tek seferlik tarama yapar (test/cron için)."""
+    """
+    Tek seferlik tarama (test/cron için).
+    Sıra: 1) URL keşfi → 2) Kategori dolaş (fiyat) → 3) Fırsat sayfası
+    """
     init_db()
     logger.info("🚀 Tek seferlik tarama başlıyor...")
 
-    await sitemap_tarama()
-    await firsat_tarama()
-    await kategori_tarama()
-    await urun_tarama()
+    await sitemap_tarama()    # Adım 1: tüm URL'leri DB'ye kaydet (saniyeler)
+    await kategori_tarama()   # Adım 2: fiyat + stok bilgisi (kategori sayfaları)
+    await firsat_tarama()     # Bonus: fırsat sayfası
 
     logger.info("✅ Tek seferlik tarama tamamlandı")
 
@@ -415,10 +443,9 @@ async def run_scheduler():
     logger.info("⏰ Zamanlayıcı başlatıldı")
 
     # İlk taramayı hemen yap
-    await sitemap_tarama()
-    await firsat_tarama()
-    await kategori_tarama()
-    await urun_tarama()
+    await sitemap_tarama()    # Adım 1: URL keşfi
+    await kategori_tarama()   # Adım 2: fiyat + stok
+    await firsat_tarama()     # Fırsat sayfası
 
     # Sonsuz döngüde bekle
     try:
