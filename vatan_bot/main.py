@@ -228,49 +228,36 @@ async def firsat_tarama():
     logger.info(f"✅ Fırsat tarama tamamlandı (sayfa: {page - 1})")
 
 
-async def kategori_tarama():
+async def _tara_tek_kategori(s, base_url: str) -> dict:
     """
-    ADIM 2: Kategori sayfalarını dolaş → her sayfada 24 ürünün adı, fiyatı, SKU'su var.
-    Fiyat değişimi varsa sinyal verir. Sayfa limiti YOK.
+    Tek bir kategoriyi tüm sayfalarıyla tarar. ASLA exception fırlatmaz.
+    Returns: {"urun": int, "guncellenen": int, "hatalar": int}
     """
-    if is_night_time():
-        return
+    sonuc = {"urun": 0, "guncellenen": 0, "hatalar": 0}
+    page = 1
 
-    logger.info("🔍 Adım 2: Kategori sayfaları taranıyor (fiyat + stok)...")
-    s = get_scraper()
-
-    # Dinamik kategori keşfi dene, başarısız olursa sabit listeyi kullan
-    kategori_urls = KATEGORI_URLS
-    try:
-        discovered = await discover_categories_from_homepage(s)
-        if discovered and len(discovered) > len(KATEGORI_URLS):
-            kategori_urls = [c["url"] for c in discovered]
-            logger.info(f"Dinamik keşif: {len(kategori_urls)} kategori (sabit: {len(KATEGORI_URLS)})")
-    except Exception as e:
-        logger.warning(f"Dinamik kategori keşfi başarısız, sabit liste kullanılıyor: {e}")
-
-    toplam_urun = 0
-    toplam_guncellenen = 0
-
-    for base_url in kategori_urls:
-        page = 1
-        while True:
+    while True:
+        try:
             url = base_url if page == 1 else f"{base_url}?page={page}"
             html = await s.fetch_html(url)
 
             if not html:
-                stats["errors"] += 1
+                sonuc["hatalar"] += 1
                 break
 
             products = parse_category_page(html)
             if not products:
                 break
 
-            # Toplu güncelle — fiyat farkı varsa price_history'ye yazar
-            updated = bulk_update_products(products)
-            toplam_guncellenen += updated
+            # Toplu güncelle
+            try:
+                updated = bulk_update_products(products)
+                sonuc["guncellenen"] += updated
+            except Exception as e:
+                logger.error(f"DB güncelleme hatası ({base_url} p{page}): {e}")
+                sonuc["hatalar"] += 1
 
-            # Fiyat düşüşü kontrolü (sinyal)
+            # Fiyat sinyalleri
             for p in products:
                 try:
                     sku = p.get("sku", "")
@@ -278,7 +265,6 @@ async def kategori_tarama():
                     if not sku or not price:
                         continue
 
-                    # Fiyat düşüşü var mı?
                     drop = check_price_drop(sku, price, PRICE_DROP_THRESHOLD)
                     if drop:
                         logger.info(
@@ -297,7 +283,6 @@ async def kategori_tarama():
                         )
                         stats["drops"] += 1
 
-                    # Fırsat sayfasından gelen eski fiyat kontrolü
                     old_price = p.get("old_price")
                     if old_price and old_price > price:
                         drop_pct_val = round((old_price - price) / old_price * 100, 1)
@@ -315,10 +300,10 @@ async def kategori_tarama():
                             )
                             stats["drops"] += 1
 
-                    toplam_urun += 1
+                    sonuc["urun"] += 1
                 except Exception as e:
-                    logger.error(f"Ürün sinyal hatası: {e}")
-                    stats["errors"] += 1
+                    logger.error(f"Sinyal hatası: {e}")
+                    sonuc["hatalar"] += 1
 
             if len(products) < 24:
                 break
@@ -326,8 +311,70 @@ async def kategori_tarama():
             if page > 50:
                 break
 
+        except Exception as e:
+            logger.error(f"Kategori sayfa hatası ({base_url} p{page}): {e}")
+            sonuc["hatalar"] += 1
+            break
+
+    return sonuc
+
+
+PARALEL_WORKER = 5  # aynı anda 5 kategori taranır
+
+
+async def kategori_tarama():
+    """
+    ADIM 2: Kategori sayfalarını PARALEL dolaş.
+    5 worker aynı anda farklı kategorileri tarar. Hiçbir hata çökmeye yol açmaz.
+    """
+    if is_night_time():
+        return
+
+    logger.info("🔍 Adım 2: Kategori tarama başlıyor (paralel)...")
+    s = get_scraper()
+
+    # Dinamik kategori keşfi
+    kategori_urls = KATEGORI_URLS
+    try:
+        discovered = await discover_categories_from_homepage(s)
+        if discovered and len(discovered) > len(KATEGORI_URLS):
+            kategori_urls = [c["url"] for c in discovered]
+            logger.info(f"Dinamik keşif: {len(kategori_urls)} kategori")
+    except Exception as e:
+        logger.warning(f"Dinamik kategori keşfi başarısız: {e}")
+
+    toplam_urun = 0
+    toplam_guncellenen = 0
+    toplam_hatalar = 0
+    tamamlanan = 0
+
+    # Semaphore ile paralel worker limiti
+    sem = asyncio.Semaphore(PARALEL_WORKER)
+
+    async def worker(base_url):
+        nonlocal toplam_urun, toplam_guncellenen, toplam_hatalar, tamamlanan
+        async with sem:
+            sonuc = await _tara_tek_kategori(s, base_url)
+            toplam_urun += sonuc["urun"]
+            toplam_guncellenen += sonuc["guncellenen"]
+            toplam_hatalar += sonuc["hatalar"]
+            tamamlanan += 1
+            if tamamlanan % 50 == 0:
+                logger.info(
+                    f"İlerleme: {tamamlanan}/{len(kategori_urls)} kategori, "
+                    f"{toplam_urun} ürün, {toplam_guncellenen} güncellendi"
+                )
+
+    # Tüm kategorileri paralel başlat
+    tasks = [asyncio.create_task(worker(url)) for url in kategori_urls]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
     stats["scanned"] += toplam_urun
-    logger.info(f"✅ Adım 2 tamamlandı — {toplam_urun} ürün, {toplam_guncellenen} güncellendi")
+    logger.info(
+        f"✅ Adım 2 tamamlandı — {tamamlanan} kategori, "
+        f"{toplam_urun} ürün, {toplam_guncellenen} güncellendi, "
+        f"{toplam_hatalar} hata"
+    )
 
 
 async def sitemap_tarama():

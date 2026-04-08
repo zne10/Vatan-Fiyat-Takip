@@ -92,81 +92,81 @@ def bulk_update_products(updates: list[dict]) -> int:
     Fiyat değişimi varsa price_history'ye ekler.
     Returns: güncellenen ürün sayısı
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     conn = get_connection()
     updated = 0
 
     for p in updates:
-        url = p.get("url", "")
-        sku = p.get("sku", "")
-        price = p.get("price")
-        if not price or price <= 0:
+        try:
+            url = p.get("url", "")
+            sku = p.get("sku", "")
+            price = p.get("price")
+            if not price or price <= 0:
+                continue
+
+            # Önce URL ile bul, sonra SKU ile
+            row = None
+            if url:
+                row = conn.execute("SELECT sku FROM products WHERE url = ?", (url,)).fetchone()
+            if not row and sku:
+                row = conn.execute("SELECT sku FROM products WHERE sku = ?", (sku,)).fetchone()
+
+            if row:
+                db_sku = row[0]
+                new_sku = db_sku
+
+                # SKU güncelleme: url-xxx → gerçek SKU
+                if db_sku.startswith("url-") and sku and not sku.startswith("url-"):
+                    existing = conn.execute("SELECT sku FROM products WHERE sku = ?", (sku,)).fetchone()
+                    if existing:
+                        conn.execute("DELETE FROM price_history WHERE product_sku = ?", (db_sku,))
+                        conn.execute("DELETE FROM products WHERE sku = ?", (db_sku,))
+                        new_sku = sku
+                    else:
+                        conn.execute("UPDATE price_history SET product_sku = ? WHERE product_sku = ?", (sku, db_sku))
+                        new_sku = sku
+
+                conn.execute(
+                    """UPDATE products SET
+                        sku = ?,
+                        name = COALESCE(NULLIF(?, ''), name),
+                        brand = COALESCE(NULLIF(?, ''), brand),
+                        category = COALESCE(NULLIF(?, ''), category),
+                        data_completeness = 1,
+                        updated_at = datetime('now','localtime')
+                       WHERE sku = ?""",
+                    (new_sku, p.get("name", ""), p.get("brand", ""), p.get("category", ""), new_sku),
+                )
+
+                last = conn.execute(
+                    "SELECT price FROM price_history WHERE product_sku = ? ORDER BY scraped_at DESC LIMIT 1",
+                    (new_sku,),
+                ).fetchone()
+
+                if not last or last[0] != price:
+                    conn.execute(
+                        "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
+                        (new_sku, price, p.get("in_stock", True)),
+                    )
+
+                updated += 1
+            elif sku:
+                conn.execute(
+                    """INSERT OR IGNORE INTO products (sku, name, url, brand, category, data_completeness)
+                       VALUES (?, ?, ?, ?, ?, 1)""",
+                    (sku, p.get("name", ""), url, p.get("brand", ""), p.get("category", "")),
+                )
+                if conn.execute("SELECT 1 FROM products WHERE sku = ?", (sku,)).fetchone():
+                    conn.execute(
+                        "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
+                        (sku, price, p.get("in_stock", True)),
+                    )
+                updated += 1
+        except Exception as e:
+            _log.warning(f"bulk_update tekil hata (sku={p.get('sku','')}): {e}")
             continue
-
-        # Önce URL ile bul, sonra SKU ile
-        row = None
-        if url:
-            row = conn.execute("SELECT sku FROM products WHERE url = ?", (url,)).fetchone()
-        if not row and sku:
-            row = conn.execute("SELECT sku FROM products WHERE sku = ?", (sku,)).fetchone()
-
-        if row:
-            db_sku = row[0]
-            new_sku = db_sku
-
-            # SKU güncelleme: url-xxx → gerçek SKU
-            if db_sku.startswith("url-") and sku and not sku.startswith("url-"):
-                # Gerçek SKU zaten başka satırda var mı?
-                existing = conn.execute("SELECT sku FROM products WHERE sku = ?", (sku,)).fetchone()
-                if existing:
-                    # Çakışma — url- kaydını sil, gerçek SKU kaydını güncelle
-                    conn.execute("DELETE FROM price_history WHERE product_sku = ?", (db_sku,))
-                    conn.execute("DELETE FROM products WHERE sku = ?", (db_sku,))
-                    new_sku = sku
-                else:
-                    # Çakışma yok — SKU'yu güncelle
-                    conn.execute("UPDATE price_history SET product_sku = ? WHERE product_sku = ?", (sku, db_sku))
-                    new_sku = sku
-
-            # Ürün bilgilerini güncelle
-            conn.execute(
-                """UPDATE products SET
-                    sku = ?,
-                    name = COALESCE(NULLIF(?, ''), name),
-                    brand = COALESCE(NULLIF(?, ''), brand),
-                    category = COALESCE(NULLIF(?, ''), category),
-                    data_completeness = 1,
-                    updated_at = datetime('now','localtime')
-                   WHERE sku = ?""",
-                (new_sku, p.get("name", ""), p.get("brand", ""), p.get("category", ""), new_sku),
-            )
-
-            # Fiyat kontrolü — her zaman güncel SKU kullan
-            last = conn.execute(
-                "SELECT price FROM price_history WHERE product_sku = ? ORDER BY scraped_at DESC LIMIT 1",
-                (new_sku,),
-            ).fetchone()
-
-            if not last or last[0] != price:
-                conn.execute(
-                    "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
-                    (new_sku, price, p.get("in_stock", True)),
-                )
-
-            updated += 1
-        elif sku:
-            # DB'de yok — yeni kayıt (önce product, sonra price_history)
-            conn.execute(
-                """INSERT OR IGNORE INTO products (sku, name, url, brand, category, data_completeness)
-                   VALUES (?, ?, ?, ?, ?, 1)""",
-                (sku, p.get("name", ""), url, p.get("brand", ""), p.get("category", "")),
-            )
-            # INSERT başarılı olduysa fiyat ekle
-            if conn.execute("SELECT 1 FROM products WHERE sku = ?", (sku,)).fetchone():
-                conn.execute(
-                    "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
-                    (sku, price, p.get("in_stock", True)),
-                )
-            updated += 1
 
     conn.commit()
     conn.close()
