@@ -27,30 +27,30 @@ class ChainScraper(BaseScraper):
         self._init_chain()
 
     def _init_chain(self):
-        # 1. Crawl4AI (birincil — browser tabanlı, en güvenilir IP gizleme)
-        try:
-            from vatan_bot.scrapers.crawl4ai_scraper import Crawl4AIScraper
-            self._scrapers.append(("crawl4ai", Crawl4AIScraper(None)))
-            logger.info("Chain: Crawl4AI eklendi (birincil)")
-        except Exception as e:
-            logger.warning(f"Crawl4AI başlatılamadı: {e}")
-
-        # 2. Cloudflare Worker (yedek)
+        # 1. Cloudflare Worker (birincil — async, en hızlı, IP gizli)
         if CF_WORKER_URL:
             try:
                 from vatan_bot.scrapers.worker_scraper import WorkerScraper
                 self._scrapers.append(("worker", WorkerScraper()))
-                logger.info("Chain: Cloudflare Worker eklendi (yedek)")
+                logger.info("Chain: CF Worker eklendi (birincil, hızlı)")
             except Exception as e:
                 logger.warning(f"Worker başlatılamadı: {e}")
 
-        # 3. Ücretsiz proxy havuzu (son çare)
+        # 2. Ücretsiz proxy havuzu (yedek)
         try:
             from vatan_bot.scrapers.proxy_scraper import ProxyScraper
             self._scrapers.append(("proxy", ProxyScraper()))
-            logger.info("Chain: Proxy havuzu eklendi (son çare)")
+            logger.info("Chain: Proxy havuzu eklendi (yedek)")
         except Exception as e:
             logger.warning(f"Proxy scraper başlatılamadı: {e}")
+
+        # 3. Crawl4AI (son çare — browser tabanlı, yavaş ama güvenilir)
+        try:
+            from vatan_bot.scrapers.crawl4ai_scraper import Crawl4AIScraper
+            self._scrapers.append(("crawl4ai", Crawl4AIScraper(None)))
+            logger.info("Chain: Crawl4AI eklendi (son çare)")
+        except Exception as e:
+            logger.warning(f"Crawl4AI başlatılamadı: {e}")
 
         if not self._scrapers:
             logger.error("UYARI: Hiçbir scraper başlatılamadı!")
