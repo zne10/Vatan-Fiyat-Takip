@@ -180,8 +180,12 @@ def list_products(
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-    allowed_sorts = {"name": "p.name", "brand": "p.brand", "category": "p.category",
-                     "price": "ph.price", "scraped_at": "ph.scraped_at"}
+    allowed_sorts = {
+        "name": "p.name", "brand": "p.brand", "category": "p.category",
+        "price": "ph.price", "prev_price": "prev.price",
+        "scraped_at": "ph.scraped_at", "updated_at": "p.updated_at",
+        "in_stock": "ph.in_stock",
+    }
     sort_col = allowed_sorts.get(sort, "ph.scraped_at")
     sort_dir = "ASC" if order == "asc" else "DESC"
 
