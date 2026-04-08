@@ -250,13 +250,15 @@ async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
                     except Exception:
                         pass
 
-                    # Fiyat düşüşü kontrolü
+                    # Fiyat düşüşü kontrolü — SADECE DB'deki gerçek eski fiyatla
+                    # Sayfadaki kampanya fiyatı (üstü çizili) KULLANILMAZ
                     drop = check_price_drop(sku, price, PRICE_DROP_THRESHOLD)
                     if drop:
                         logger.info(
                             f"💰 [FİYAT] {p.get('name', '')} — "
                             f"{drop['old_price']:.0f} → {drop['new_price']:.0f} TL "
-                            f"(%{drop['drop_pct'] * 100:.1f})"
+                            f"(%{drop['drop_pct'] * 100:.1f}) "
+                            f"[eski fiyat tarihi: {drop['old_price_date']}]"
                         )
                         send_price_drop_alert(
                             name=p.get("name", ""),
@@ -269,23 +271,6 @@ async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
                         )
                         sonuc["dusus"] += 1
                         stats["drops"] += 1
-
-                    # Sayfa üzerindeki eski fiyat (üstü çizili) kontrolü
-                    old_price = p.get("old_price")
-                    if old_price and old_price > price:
-                        drop_pct_val = round((old_price - price) / old_price * 100, 1)
-                        if drop_pct_val >= PRICE_DROP_THRESHOLD * 100:
-                            create_opportunity(
-                                product_sku=sku,
-                                product_name=p.get("name", ""),
-                                brand=p.get("brand", ""),
-                                category=p.get("category", ""),
-                                url=p.get("url", ""),
-                                old_price=old_price,
-                                new_price=price,
-                                drop_pct=drop_pct_val,
-                            )
-                            sonuc["dusus"] += 1
 
                     # Hedef fiyat alarmları
                     target_alerts = check_target_alerts(sku, price)

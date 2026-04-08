@@ -316,11 +316,32 @@ def _get_threshold_for_price(price: float) -> float:
     return 0.05  # varsayılan %5
 
 
+def get_last_price_with_date(product_sku: str) -> Optional[dict]:
+    """Son fiyat kaydını tarihiyle birlikte döner."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT price, scraped_at FROM price_history
+           WHERE product_sku = ? ORDER BY scraped_at DESC LIMIT 1""",
+        (product_sku,),
+    ).fetchone()
+    conn.close()
+    if row:
+        return {"price": row["price"], "date": row["scraped_at"]}
+    return None
+
+
 def check_price_drop(product_sku: str, current_price: float, threshold: float = None) -> Optional[dict]:
-    """Fiyat düşüşü kontrolü. Kural tabanlı eşik kullanır. Düşüş varsa detay döner ve opportunity oluşturur."""
-    last_price = get_last_price(product_sku)
-    if last_price is None:
+    """
+    Fiyat düşüşü kontrolü — SADECE DB'deki gerçek fiyat geçmişiyle karşılaştırır.
+    Sayfadaki kampanya fiyatı (üstü çizili) kullanılmaz.
+    Düşüş varsa eski fiyatın tarihi de döner.
+    """
+    last = get_last_price_with_date(product_sku)
+    if last is None:
         return None
+
+    last_price = last["price"]
+    last_date = last["date"]
 
     if current_price >= last_price:
         return None
@@ -340,7 +361,7 @@ def check_price_drop(product_sku: str, current_price: float, threshold: float = 
     # Ürün bilgisi
     product = get_product(product_sku)
 
-    # Opportunity oluştur
+    # Opportunity oluştur — eski fiyat tarihi ile
     create_opportunity(
         product_sku=product_sku,
         product_name=product["name"] if product else "",
@@ -350,11 +371,13 @@ def check_price_drop(product_sku: str, current_price: float, threshold: float = 
         old_price=last_price,
         new_price=current_price,
         drop_pct=round(drop_pct * 100, 1),
+        old_price_date=last_date,
     )
 
     return {
         "sku": product_sku,
         "old_price": last_price,
+        "old_price_date": last_date,
         "new_price": current_price,
         "drop_pct": drop_pct,
         "is_all_time_low": is_all_time_low,
@@ -370,8 +393,13 @@ def create_opportunity(
     old_price: float,
     new_price: float,
     drop_pct: float,
+    old_price_date: str = "",
 ) -> None:
-    """Yeni fırsat kaydı oluşturur."""
+    """
+    Yeni fırsat kaydı oluşturur.
+    old_price SADECE DB'deki gerçek fiyat geçmişinden gelmeli — kampanya fiyatı değil.
+    old_price_date: bu fiyatın DB'de kaydedildiği tarih.
+    """
     conn = get_connection()
     # Aynı ürün için son 1 saatte zaten fırsat oluşturulmuşsa atla
     existing = conn.execute(
@@ -385,9 +413,9 @@ def create_opportunity(
 
     conn.execute(
         """INSERT INTO opportunities
-           (product_sku, product_name, brand, category, url, old_price, new_price, drop_pct)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (product_sku, product_name, brand, category, url, old_price, new_price, drop_pct),
+           (product_sku, product_name, brand, category, url, old_price, new_price, drop_pct, old_price_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_sku, product_name, brand, category, url, old_price, new_price, drop_pct, old_price_date),
     )
     conn.commit()
     conn.close()

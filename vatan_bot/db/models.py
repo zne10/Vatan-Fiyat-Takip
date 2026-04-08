@@ -60,12 +60,18 @@ def init_db():
             old_price REAL NOT NULL,
             new_price REAL NOT NULL,
             drop_pct REAL NOT NULL,
+            old_price_date TEXT,
             detected_at DATETIME DEFAULT (datetime('now','localtime')),
             dismissed BOOLEAN DEFAULT 0,
             notified BOOLEAN DEFAULT 0,
             FOREIGN KEY (product_sku) REFERENCES products(sku)
         )
     """)
+    # Mevcut tabloya old_price_date ekle (migration)
+    try:
+        c.execute("ALTER TABLE opportunities ADD COLUMN old_price_date TEXT")
+    except Exception:
+        pass  # kolon zaten var
 
     # ── 4. ALARMLAR (Kullanıcı hedef fiyat) ──
     c.execute("""
