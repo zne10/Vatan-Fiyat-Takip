@@ -106,12 +106,12 @@ def bulk_update_products(updates: list[dict]) -> int:
             if not price or price <= 0:
                 continue
 
-            # Önce URL ile bul, sonra SKU ile
+            # Eşleşme: URL + SKU birlikte kontrol et, tutarsızsa SKU'yu tercih et
             row = None
-            if url:
-                row = conn.execute("SELECT sku FROM products WHERE url = ?", (url,)).fetchone()
-            if not row and sku:
+            if sku and not sku.startswith("url-"):
                 row = conn.execute("SELECT sku FROM products WHERE sku = ?", (sku,)).fetchone()
+            if not row and url:
+                row = conn.execute("SELECT sku FROM products WHERE url = ?", (url,)).fetchone()
 
             if row:
                 db_sku = row[0]
@@ -128,16 +128,19 @@ def bulk_update_products(updates: list[dict]) -> int:
                         conn.execute("UPDATE price_history SET product_sku = ? WHERE product_sku = ?", (sku, db_sku))
                         new_sku = sku
 
+                # URL de güncelle (yanlış URL düzeltme)
+                new_url = url if url else None
                 conn.execute(
                     """UPDATE products SET
                         sku = ?,
                         name = COALESCE(NULLIF(?, ''), name),
+                        url = COALESCE(NULLIF(?, ''), url),
                         brand = COALESCE(NULLIF(?, ''), brand),
                         category = COALESCE(NULLIF(?, ''), category),
                         data_completeness = 1,
                         updated_at = datetime('now','localtime')
                        WHERE sku = ?""",
-                    (new_sku, p.get("name", ""), p.get("brand", ""), p.get("category", ""), new_sku),
+                    (new_sku, p.get("name", ""), new_url or "", p.get("brand", ""), p.get("category", ""), new_sku),
                 )
 
                 last = conn.execute(
@@ -146,6 +149,16 @@ def bulk_update_products(updates: list[dict]) -> int:
                 ).fetchone()
 
                 if not last or last[0] != price:
+                    # Anormal fiyat değişimi kontrolü (%80'den fazla değişim → atla)
+                    if last and last[0] > 0:
+                        change_ratio = abs(price - last[0]) / last[0]
+                        if change_ratio > 0.80:
+                            _log.warning(
+                                f"Anormal fiyat değişimi atlandı: {new_sku} "
+                                f"{last[0]:.0f} → {price:.0f} (%{change_ratio*100:.0f})"
+                            )
+                            continue
+
                     conn.execute(
                         "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
                         (new_sku, price, p.get("in_stock", True)),
