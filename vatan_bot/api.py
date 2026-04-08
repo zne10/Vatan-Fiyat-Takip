@@ -64,16 +64,28 @@ def get_stats():
     """)
     in_stock = c.fetchone()[0]
 
-    # Son 1 saatte taranan (updated_at güncellenen ürünler)
-    c.execute("SELECT COUNT(*) FROM products WHERE updated_at > datetime('now','localtime','-1 hours')")
+    # Son 1 saatte taranan (fiyatlı ürünlerden updated_at güncellenenler)
+    c.execute("""
+        SELECT COUNT(*) FROM products p
+        WHERE p.updated_at > datetime('now','localtime','-1 hours')
+        AND EXISTS (SELECT 1 FROM price_history WHERE product_sku = p.sku)
+    """)
     scans_1h = c.fetchone()[0]
 
     # Son 24 saatte taranan
-    c.execute("SELECT COUNT(*) FROM products WHERE updated_at > datetime('now','localtime','-24 hours')")
+    c.execute("""
+        SELECT COUNT(*) FROM products p
+        WHERE p.updated_at > datetime('now','localtime','-24 hours')
+        AND EXISTS (SELECT 1 FROM price_history WHERE product_sku = p.sku)
+    """)
     scans_24h = c.fetchone()[0]
 
-    # Son tarama zamanı
-    c.execute("SELECT MAX(updated_at) FROM products")
+    # Son tarama zamanı (fiyatlı ürünlerden)
+    c.execute("""
+        SELECT MAX(p.updated_at) FROM products p
+        WHERE EXISTS (SELECT 1 FROM price_history WHERE product_sku = p.sku)
+        AND p.updated_at != p.created_at
+    """)
     row = c.fetchone()
     last_scan = row[0] if row else None
 
