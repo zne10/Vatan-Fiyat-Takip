@@ -45,16 +45,30 @@ def get_stats():
     conn = get_connection()
     c = conn.cursor()
 
+    # Toplam ürün (DB'de kayıtlı tüm URL'ler)
     c.execute("SELECT COUNT(*) FROM products")
     total = c.fetchone()[0]
 
+    # Fiyatlı ürün (en az 1 fiyat kaydı olan)
     c.execute("SELECT COUNT(DISTINCT product_sku) FROM price_history")
-    tracked = c.fetchone()[0]
+    with_price = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM price_history WHERE scraped_at > datetime('now','localtime','-24 hours')")
+    # Stokta olan ürünler (son fiyat kaydında in_stock=1)
+    c.execute("""
+        SELECT COUNT(*) FROM products p
+        WHERE EXISTS (
+            SELECT 1 FROM price_history ph
+            WHERE ph.product_sku = p.sku AND ph.in_stock = 1
+            AND ph.scraped_at = (SELECT MAX(ph2.scraped_at) FROM price_history ph2 WHERE ph2.product_sku = p.sku)
+        )
+    """)
+    in_stock = c.fetchone()[0]
+
+    # Bugün fiyat güncellenen ürün sayısı
+    c.execute("SELECT COUNT(DISTINCT product_sku) FROM price_history WHERE scraped_at > datetime('now','localtime','-24 hours')")
     scans_today = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM opportunities WHERE detected_at > datetime('now','localtime','-24 hours') AND dismissed=0")
+    c.execute("SELECT COUNT(*) FROM opportunities WHERE detected_at > datetime('now','localtime','-24 hours') AND dismissed=0 AND old_price_date IS NOT NULL")
     drops_today = c.fetchone()[0]
 
     c.execute("SELECT COUNT(*) FROM opportunities WHERE dismissed=0 AND old_price_date IS NOT NULL")
@@ -72,7 +86,8 @@ def get_stats():
     conn.close()
     return {
         "total_products": total,
-        "tracked_products": tracked,
+        "with_price": with_price,
+        "in_stock": in_stock,
         "scans_today": scans_today,
         "drops_today": drops_today,
         "active_opportunities": active_opps,
