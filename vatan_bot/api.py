@@ -57,7 +57,7 @@ def get_stats():
     c.execute("SELECT COUNT(*) FROM opportunities WHERE detected_at > datetime('now','localtime','-24 hours') AND dismissed=0")
     drops_today = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM opportunities WHERE dismissed=0")
+    c.execute("SELECT COUNT(*) FROM opportunities WHERE dismissed=0 AND old_price_date IS NOT NULL")
     active_opps = c.fetchone()[0]
 
     c.execute("SELECT COUNT(*) FROM alerts WHERE alert_sent=0")
@@ -221,7 +221,7 @@ def list_opportunities(
     conn = get_connection()
     c = conn.cursor()
 
-    conditions = ["dismissed = ?"]
+    conditions = ["dismissed = ?", "old_price_date IS NOT NULL"]
     params: list = [1 if dismissed else 0]
     if brand:
         conditions.append("brand = ?")
