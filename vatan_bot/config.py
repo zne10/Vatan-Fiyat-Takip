@@ -46,8 +46,8 @@ BACKOFF_FACTOR = 2  # exponential backoff çarpanı
 FIRSAT_INTERVAL_MINUTES = 30
 KATEGORI_INTERVAL_HOURS = 2
 URUN_INTERVAL_HOURS = 1
-GECE_BASLANGIC = 2   # 02:00
-GECE_BITIS = 7        # 07:00
+GECE_BASLANGIC = 4   # 04:00
+GECE_BITIS = 6        # 06:00
 
 # ── Takip Edilecek Sayfalar ──
 FIRSAT_URL = "https://www.vatanbilgisayar.com/firsat-urunler"

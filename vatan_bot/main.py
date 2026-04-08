@@ -59,7 +59,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Sabitler ──
-PARALEL_WORKER = 10  # eşzamanlı tarayıcı sayısı
+PARALEL_WORKER = 3  # eşzamanlı tarayıcı (her biri ayrı browser)
 
 # ── Global State ──
 scraper: Optional[BaseScraper] = None
