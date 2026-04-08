@@ -64,9 +64,18 @@ def get_stats():
     """)
     in_stock = c.fetchone()[0]
 
-    # Bugün fiyat güncellenen ürün sayısı
+    # Son 1 saatte taranan
+    c.execute("SELECT COUNT(DISTINCT product_sku) FROM price_history WHERE scraped_at > datetime('now','localtime','-1 hours')")
+    scans_1h = c.fetchone()[0]
+
+    # Son 24 saatte taranan
     c.execute("SELECT COUNT(DISTINCT product_sku) FROM price_history WHERE scraped_at > datetime('now','localtime','-24 hours')")
-    scans_today = c.fetchone()[0]
+    scans_24h = c.fetchone()[0]
+
+    # Son tarama zamanı
+    c.execute("SELECT MAX(scraped_at) FROM price_history")
+    row = c.fetchone()
+    last_scan = row[0] if row else None
 
     c.execute("SELECT COUNT(*) FROM opportunities WHERE detected_at > datetime('now','localtime','-24 hours') AND dismissed=0 AND old_price_date IS NOT NULL")
     drops_today = c.fetchone()[0]
@@ -88,7 +97,9 @@ def get_stats():
         "total_products": total,
         "with_price": with_price,
         "in_stock": in_stock,
-        "scans_today": scans_today,
+        "scans_1h": scans_1h,
+        "scans_24h": scans_24h,
+        "last_scan": last_scan,
         "drops_today": drops_today,
         "active_opportunities": active_opps,
         "active_alerts": active_alerts,
