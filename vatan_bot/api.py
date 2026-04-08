@@ -369,38 +369,73 @@ def list_categories():
 # SERVICES
 # ════════════════════════════════════════════════════════════
 
+def _pm2_list() -> list[dict]:
+    """PM2'den gerçek process durumunu okur."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["pm2", "jlist"], capture_output=True, text=True, timeout=5
+        )
+        return json.loads(result.stdout) if result.stdout else []
+    except Exception:
+        return []
+
+
+PM2_SERVICE_MAP = {
+    "vatan-api": {"display_name": "API Sunucu", "description": "Dashboard REST API servisi"},
+    "vatan-kesif": {"display_name": "URL Keşif", "description": "llmmap.txt'den ürün URL'lerini keşfeder (12 saatte 1)"},
+    "vatan-kategori": {"display_name": "Kategori Tarama", "description": "Kategori sayfalarını dolaşır, ürün bilgisi toplar (2 saatte 1)"},
+    "vatan-fiyat": {"display_name": "Fiyat Takip", "description": "Fiyat değişimlerini kontrol eder, düşüş varsa sinyal (aralıksız)"},
+    "vatan-firsat": {"display_name": "Fırsat Tarama", "description": "Fırsat sayfasını tarar (30 dk'da 1)"},
+    "webhook": {"display_name": "Webhook", "description": "GitHub deploy webhook (port 9000)"},
+}
+
+
 @app.get("/api/services")
 def list_services():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM services")
-    services = _rows(c)
-    conn.close()
-    for s in services:
-        s["stats"] = json.loads(s.get("stats_json") or "{}")
-        s["config"] = json.loads(s.get("config_json") or "{}")
+    pm2_processes = _pm2_list()
+    services = []
+    for proc in pm2_processes:
+        name = proc.get("name", "")
+        meta = PM2_SERVICE_MAP.get(name, {"display_name": name, "description": ""})
+        env = proc.get("pm2_env", {})
+        monit = proc.get("monit", {})
+        status = env.get("status", "stopped")
+
+        services.append({
+            "name": name,
+            "display_name": meta["display_name"],
+            "description": meta["description"],
+            "status": "running" if status == "online" else "stopped",
+            "pm2_id": proc.get("pm_id"),
+            "pid": proc.get("pid"),
+            "uptime": env.get("pm_uptime"),
+            "restarts": env.get("restart_time", 0),
+            "cpu": monit.get("cpu", 0),
+            "memory_mb": round(monit.get("memory", 0) / 1024 / 1024, 1),
+        })
+
     return services
 
 
 @app.post("/api/services/{name}/start")
 def start_service(name: str):
-    conn = get_connection()
-    conn.execute(
-        "UPDATE services SET status='running', started_at=datetime('now','localtime') WHERE name=?",
-        (name,),
-    )
-    conn.commit()
-    conn.close()
-    return {"ok": True, "status": "running"}
+    import subprocess
+    try:
+        subprocess.run(["pm2", "start", name], capture_output=True, timeout=10)
+        return {"ok": True, "status": "running"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/services/{name}/stop")
 def stop_service(name: str):
-    conn = get_connection()
-    conn.execute("UPDATE services SET status='stopped', started_at=NULL WHERE name=?", (name,))
-    conn.commit()
-    conn.close()
-    return {"ok": True, "status": "stopped"}
+    import subprocess
+    try:
+        subprocess.run(["pm2", "stop", name], capture_output=True, timeout=10)
+        return {"ok": True, "status": "stopped"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ════════════════════════════════════════════════════════════
