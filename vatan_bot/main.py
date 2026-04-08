@@ -163,15 +163,24 @@ async def detay_tarama(worker_id: int = 0, total_workers: int = 1):
             data = parse_product_detail(html, url=url)
             if data and data.get("price", 0) > 0:
                 try:
-                    bulk_update_products([{
-                        "url": url,
-                        "sku": data.get("sku", ""),
-                        "name": data.get("name", ""),
-                        "price": data["price"],
-                        "brand": data.get("brand", ""),
-                        "category": data.get("category", ""),
-                        "in_stock": data.get("in_stock", True),
-                    }])
+                    sku = data.get("sku", "")
+                    if not sku:
+                        continue
+                    # URL ile mevcut ürünü bul, SKU'yu ve bilgileri güncelle
+                    upsert_product(
+                        sku=sku,
+                        name=data.get("name", ""),
+                        url=url,
+                        brand=data.get("brand", ""),
+                        category=data.get("category", ""),
+                    )
+                    add_price_record(sku, data["price"], data.get("in_stock", True))
+                    # Eski url- kaydını temizle
+                    from vatan_bot.db.models import get_connection
+                    conn = get_connection()
+                    conn.execute("DELETE FROM products WHERE url = ? AND sku LIKE 'url-%'", (url,))
+                    conn.commit()
+                    conn.close()
                     taranan += 1
                 except Exception as e:
                     logger.error(f"[DETAY-{worker_id}] DB hatası: {e}")
