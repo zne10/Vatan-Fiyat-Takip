@@ -314,7 +314,7 @@ async def sitemap_tarama():
             stats["errors"] += 1
             continue
 
-        data = parse_product_detail(html)
+        data = parse_product_detail(html, url=url)
         if data:
             try:
                 process_product(data, url)
@@ -346,7 +346,7 @@ async def urun_tarama():
             stats["errors"] += 1
             continue
 
-        data = parse_product_detail(html)
+        data = parse_product_detail(html, url=url)
         if data:
             try:
                 process_product(data, url)

@@ -161,52 +161,153 @@ def parse_category_page(html: str) -> list[dict]:
     return products
 
 
-def parse_product_detail(html: str) -> Optional[dict]:
+def parse_product_detail(html: str, url: str = "") -> Optional[dict]:
     """
     Ürün detay sayfasını parse eder.
-    Önce JSON-LD dener, başarısız olursa CSS selector'lara düşer.
+    Önce JSON-LD dener, eksik alanları CSS selector ile tamamlar.
     """
-    # Önce JSON-LD
-    result = parse_jsonld_product(html)
-    if result and result["price"] > 0:
-        return result
-
-    # Fallback: CSS selector
     soup = BeautifulSoup(html, "lxml")
+
+    # JSON-LD'den veri çek
+    jsonld = parse_jsonld_product(html)
+
+    # CSS selector'lardan veri çek
+    css_data = _parse_css_detail(soup)
+
+    # İkisini birleştir — JSON-LD birincil, CSS yedek
+    result = {}
+
+    if jsonld and jsonld.get("price", 0) > 0:
+        result = jsonld
+        # JSON-LD'de eksik alanları CSS'den doldur
+        if not result.get("sku") and css_data.get("sku"):
+            result["sku"] = css_data["sku"]
+        if not result.get("name") and css_data.get("name"):
+            result["name"] = css_data["name"]
+        if not result.get("mpn") and css_data.get("mpn"):
+            result["mpn"] = css_data["mpn"]
+    elif css_data and css_data.get("price", 0) > 0:
+        result = css_data
+    else:
+        return None
+
+    # Hala SKU yoksa URL'den türet
+    if not result.get("sku") and url:
+        result["sku"] = _sku_from_url(url)
+
+    # Hala SKU yoksa sayfadaki data attribute'lardan dene
+    if not result.get("sku"):
+        sku_from_page = _find_sku_in_page(soup)
+        if sku_from_page:
+            result["sku"] = sku_from_page
+
+    # HTML entity temizliği (tüm string alanlar)
+    from html import unescape
+    for key in ("name", "category", "brand", "mpn"):
+        if result.get(key):
+            result[key] = unescape(result[key])
+
+    return result if result.get("price", 0) > 0 else None
+
+
+def _parse_css_detail(soup) -> dict:
+    """CSS selector'larla ürün detay sayfasını parse eder."""
     try:
         name = ""
         h1 = soup.select_one("h1")
         if h1:
             name = h1.get_text(strip=True)
 
+        # Fiyat
         price_el = soup.select_one(".product-detail-price-big")
         if not price_el:
             price_el = soup.select_one(".product-list__price")
         price = clean_price(price_el.get_text(strip=True)) if price_el else None
 
-        sku_el = soup.select_one(".product-list__product-code")
-        sku = sku_el.get_text(strip=True) if sku_el else ""
+        # SKU — birkaç farklı selector dene
+        sku = ""
+        mpn = ""
+        for sel in [
+            ".product-list__product-code",
+            "[data-product-id]",
+            ".product-id",
+            ".product-code",
+        ]:
+            el = soup.select_one(sel)
+            if el:
+                text = el.get_text(strip=True) if sel != "[data-product-id]" else el.get("data-product-id", "")
+                if text:
+                    sku = text
+                    break
 
         # SKU formatı: "MPN / İÇ_ID" — iç ID'yi al
         if "/" in sku:
             parts = sku.split("/")
             mpn = parts[0].strip()
             sku = parts[-1].strip()
-        else:
-            mpn = ""
+
+        # Marka
+        brand = ""
+        brand_el = soup.select_one(".product-detail-brand, [itemprop=brand]")
+        if brand_el:
+            brand = brand_el.get_text(strip=True)
+
+        # Kategori — breadcrumb'dan
+        category = _extract_category_from_breadcrumb(soup)
 
         if not price:
-            return None
+            return {}
 
         return {
             "name": name,
             "sku": sku,
             "mpn": mpn,
-            "brand": "",
-            "category": "",
+            "brand": brand,
+            "category": category,
             "price": price,
             "in_stock": True,
         }
     except Exception as e:
         logger.debug(f"CSS selector parse hatası: {e}")
-        return None
+        return {}
+
+
+def _sku_from_url(url: str) -> str:
+    """URL'den benzersiz bir SKU türetir. Örn: /urun-adi.html → 'url-urun-adi'"""
+    import hashlib
+    path = url.rstrip("/").split("/")[-1]
+    # .html uzantısını kaldır
+    path = re.sub(r'\.html?$', '', path)
+    # URL çok uzunsa hash'le
+    if len(path) > 50:
+        short = path[:30] + "-" + hashlib.md5(path.encode()).hexdigest()[:8]
+        return f"url-{short}"
+    return f"url-{path}"
+
+
+def _find_sku_in_page(soup) -> str:
+    """Sayfadaki gizli input, data attribute veya JS'den SKU bulur."""
+    # data-product-id attribute
+    el = soup.select_one("[data-product-id]")
+    if el:
+        pid = el.get("data-product-id", "").strip()
+        if pid:
+            return pid
+
+    # Gizli input
+    for inp in soup.select("input[type=hidden]"):
+        name = inp.get("name", "").lower()
+        if "product" in name and "id" in name:
+            val = inp.get("value", "").strip()
+            if val:
+                return val
+
+    # Add to cart butonundaki data attribute
+    btn = soup.select_one("[data-productid], [data-product-sku], .add-to-cart[data-id]")
+    if btn:
+        for attr in ["data-productid", "data-product-sku", "data-id"]:
+            val = btn.get(attr, "").strip()
+            if val:
+                return val
+
+    return ""
