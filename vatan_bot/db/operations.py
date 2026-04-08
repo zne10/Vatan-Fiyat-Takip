@@ -148,15 +148,21 @@ def bulk_update_products(updates: list[dict]) -> int:
                     (new_sku,),
                 ).fetchone()
 
+                # Her zaman updated_at güncelle (dashboard son tarama zamanı için)
+                conn.execute(
+                    "UPDATE products SET updated_at = datetime('now','localtime') WHERE sku = ?",
+                    (new_sku,),
+                )
+
                 if not last or last[0] != price:
                     # Anormal fiyat değişimi kontrolü (%80'den fazla değişim → atla)
                     if last and last[0] > 0:
                         change_ratio = abs(price - last[0]) / last[0]
                         if change_ratio > 0.80:
                             _log.warning(
-                                f"Anormal fiyat değişimi atlandı: {new_sku} "
-                                f"{last[0]:.0f} → {price:.0f} (%{change_ratio*100:.0f})"
+                                f"Anormal fiyat: {new_sku} {last[0]:.0f} → {price:.0f} (%{change_ratio*100:.0f})"
                             )
+                            updated += 1
                             continue
 
                     conn.execute(
