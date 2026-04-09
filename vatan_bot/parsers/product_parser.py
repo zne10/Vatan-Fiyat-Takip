@@ -201,11 +201,18 @@ def parse_product_detail(html: str, url: str = "") -> Optional[dict]:
         if sku_from_page:
             result["sku"] = sku_from_page
 
-    # HTML entity temizliği (tüm string alanlar)
+    # HTML entity temizliği
     from html import unescape
     for key in ("name", "category", "brand", "mpn"):
         if result.get(key):
             result[key] = unescape(result[key])
+
+    # Breadcrumb kategori → sadece alt kategori (2. segment)
+    cat = result.get("category", "")
+    if ">" in cat:
+        parts = [p.strip() for p in cat.split(">")]
+        # 2. segment en anlamlı alt kategori (1. çok genel, 3+ çok spesifik)
+        result["category"] = parts[1] if len(parts) >= 2 else parts[0]
 
     return result if result.get("price", 0) > 0 else None
 

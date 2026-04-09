@@ -185,6 +185,7 @@ def list_products(
         "price": "ph.price", "prev_price": "prev.price",
         "scraped_at": "ph.scraped_at", "updated_at": "p.updated_at",
         "in_stock": "ph.in_stock",
+        "change_pct": "CASE WHEN prev.price > 0 THEN (ph.price - prev.price) / prev.price ELSE 0 END",
     }
     sort_col = allowed_sorts.get(sort, "ph.scraped_at")
     sort_dir = "ASC" if order == "asc" else "DESC"
