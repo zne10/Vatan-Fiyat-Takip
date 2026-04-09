@@ -157,10 +157,10 @@ def list_products(
     brand: Optional[str] = None,
     category: Optional[str] = None,
     search: Optional[str] = None,
-    sort: str = "scraped_at",
+    sort: str = "updated_at",
     order: str = "desc",
     page: int = 0,
-    limit: int = 30,
+    limit: int = 50,
 ):
     conn = get_connection()
     c = conn.cursor()
@@ -255,7 +255,7 @@ def list_opportunities(
     dismissed: bool = False,
     sort: str = "drop_pct",
     order: str = "desc",
-    limit: int = 100,
+    limit: int = 500,
 ):
     conn = get_connection()
     c = conn.cursor()
@@ -347,13 +347,15 @@ def list_brands():
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT brand, COUNT(*) as count,
+        SELECT p.brand, COUNT(*) as count,
                ROUND(AVG(ph.price), 0) as avg_price
         FROM products p
-        LEFT JOIN price_history ph ON ph.product_sku = p.sku
+        INNER JOIN price_history ph ON ph.product_sku = p.sku
             AND ph.scraped_at = (SELECT MAX(scraped_at) FROM price_history WHERE product_sku = p.sku)
         WHERE p.brand != '' AND p.brand IS NOT NULL
-        GROUP BY p.brand ORDER BY count DESC
+        GROUP BY p.brand
+        HAVING count >= 2
+        ORDER BY count DESC
     """)
     brands = _rows(c)
     conn.close()
@@ -365,13 +367,15 @@ def list_categories():
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT category, COUNT(*) as count,
+        SELECT p.category, COUNT(*) as count,
                ROUND(AVG(ph.price), 0) as avg_price
         FROM products p
-        LEFT JOIN price_history ph ON ph.product_sku = p.sku
+        INNER JOIN price_history ph ON ph.product_sku = p.sku
             AND ph.scraped_at = (SELECT MAX(scraped_at) FROM price_history WHERE product_sku = p.sku)
         WHERE p.category != '' AND p.category IS NOT NULL
-        GROUP BY p.category ORDER BY count DESC
+        GROUP BY p.category
+        HAVING count >= 2
+        ORDER BY count DESC
     """)
     cats = _rows(c)
     conn.close()
