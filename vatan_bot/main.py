@@ -334,14 +334,21 @@ async def fiyat_tarama(worker_id: int = 0, total_workers: int = 1):
 
     s = get_scraper()
 
-    # Kategori listesi
-    kategori_urls = KATEGORI_URLS
+    # Kategori listesi — llmmap + ana sayfa + sabit liste birleştirilir
+    kategori_urls = set(KATEGORI_URLS)
+    try:
+        product_urls, llmmap_cats = await fetch_llmmap(s)
+        kategori_urls.update(llmmap_cats)
+        logger.info(f"[FİYAT-{worker_id}] llmmap'ten {len(llmmap_cats)} kategori eklendi")
+    except Exception as e:
+        logger.warning(f"[FİYAT-{worker_id}] llmmap keşfi başarısız: {e}")
     try:
         discovered = await discover_categories_from_homepage(s)
-        if discovered and len(discovered) > len(KATEGORI_URLS):
-            kategori_urls = [c["url"] for c in discovered]
+        if discovered:
+            kategori_urls.update(c["url"] for c in discovered)
     except Exception as e:
-        logger.warning(f"[FİYAT-{worker_id}] Kategori keşfi başarısız: {e}")
+        logger.warning(f"[FİYAT-{worker_id}] Ana sayfa keşfi başarısız: {e}")
+    kategori_urls = sorted(kategori_urls)
 
     # Bu worker'ın payına düşen kategoriler
     my_urls = [u for i, u in enumerate(kategori_urls) if i % total_workers == worker_id]
