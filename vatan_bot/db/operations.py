@@ -172,14 +172,24 @@ def bulk_update_products(updates: list[dict]) -> int:
 
                 updated += 1
             elif sku:
-                # Yeni ürün — önce products'a ekle, sonra fiyat yaz
+                # Yeni ürün — URL çakışması varsa url- kaydını güncelle
                 try:
+                    # URL zaten başka kayıtta var mı?
+                    if url:
+                        url_row = conn.execute("SELECT sku FROM products WHERE url = ?", (url,)).fetchone()
+                        if url_row and url_row[0].startswith("url-"):
+                            # url- kaydını gerçek SKU'ya güncelle
+                            conn.execute("UPDATE products SET sku=?, name=?, brand=COALESCE(NULLIF(?,'')),brand), category=COALESCE(NULLIF(?,'')),category), data_completeness=1, updated_at=datetime('now','localtime') WHERE sku=?",
+                                (sku, p.get("name",""), p.get("brand",""), p.get("category",""), url_row[0]))
+                        elif url_row:
+                            # Başka gerçek SKU ile kayıtlı — URL'siz ekle
+                            url = ""
+
                     conn.execute(
                         """INSERT INTO products (sku, name, url, brand, category, data_completeness)
                            VALUES (?, ?, ?, ?, ?, 1)
                            ON CONFLICT(sku) DO UPDATE SET
                                name = COALESCE(NULLIF(excluded.name, ''), products.name),
-                               url = COALESCE(NULLIF(excluded.url, ''), products.url),
                                brand = COALESCE(NULLIF(excluded.brand, ''), products.brand),
                                category = COALESCE(NULLIF(excluded.category, ''), products.category),
                                updated_at = datetime('now','localtime')""",
