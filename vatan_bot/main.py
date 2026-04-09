@@ -137,8 +137,6 @@ async def detay_tarama(worker_id: int = 0, total_workers: int = 1):
     DB'de fiyatı olmayan ürünlerin detay sayfalarını tarar.
     llmmap.txt'den gelen ama kategori sayfasında çıkmayan ürünler için.
     """
-    if is_night_time():
-        return
 
     all_urls = get_unpriced_urls(limit=10000)
     # Bu worker'ın payı
@@ -341,8 +339,6 @@ async def fiyat_tarama(worker_id: int = 0, total_workers: int = 1):
     Kategori sayfalarını dolaşır, fiyat farkı varsa sinyal.
     worker_id / total_workers ile kategoriler bölünür — paralel process'ler çakışmaz.
     """
-    if is_night_time():
-        return
 
     s = get_scraper()
 
@@ -399,8 +395,6 @@ async def fiyat_tarama(worker_id: int = 0, total_workers: int = 1):
 
 async def firsat_tarama():
     """Fırsat sayfasını tarar — yeni fırsat ürünlerini bildirir."""
-    if is_night_time():
-        return
 
     logger.info("🔥 [FIRSAT] Fırsat sayfası taranıyor...")
     s = get_scraper()

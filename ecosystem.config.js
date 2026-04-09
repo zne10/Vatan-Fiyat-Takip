@@ -1,11 +1,22 @@
 const REPO = "/var/www/projects/vatan-repo";
-const FIYAT_WORKERS = 8;
+const FIYAT_WORKERS = 5;
+const DETAY_WORKERS = 5;
 
 const fiyatApps = Array.from({length: FIYAT_WORKERS}, (_, i) => ({
   name: `vatan-fiyat-${i}`,
   cwd: REPO,
   script: "python3",
   args: `-m vatan_bot.main --mode fiyat --worker-id ${i} --total-workers ${FIYAT_WORKERS}`,
+  autorestart: true,
+  restart_delay: 3000,
+  max_restarts: 10000,
+}));
+
+const detayApps = Array.from({length: DETAY_WORKERS}, (_, i) => ({
+  name: `vatan-detay-${i}`,
+  cwd: REPO,
+  script: "python3",
+  args: `-m vatan_bot.main --mode detay --worker-id ${i} --total-workers ${DETAY_WORKERS}`,
   autorestart: true,
   restart_delay: 3000,
   max_restarts: 10000,
@@ -31,6 +42,7 @@ module.exports = {
       max_restarts: 100,
     },
     ...fiyatApps,
+    ...detayApps,
     {
       name: "vatan-firsat",
       cwd: REPO,
