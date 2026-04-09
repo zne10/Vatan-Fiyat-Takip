@@ -85,7 +85,23 @@ def init_db():
         )
     """)
 
-    # ── 5. FIRSAT KURALLARI (Fiyat aralığına göre eşik) ──
+    # ── 5. ÖNCELİK KATEGORİLERİ ──
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS priority_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,
+            priority INTEGER DEFAULT 1,
+            scan_interval_minutes INTEGER DEFAULT 60,
+            enabled BOOLEAN DEFAULT 1,
+            created_at DATETIME DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    try:
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_prio_cat ON priority_categories(category)")
+    except Exception:
+        pass
+
+    # ── 6. FIRSAT KURALLARI (Fiyat aralığına göre eşik) ──
     c.execute("""
         CREATE TABLE IF NOT EXISTS alert_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

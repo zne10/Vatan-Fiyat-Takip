@@ -383,6 +383,72 @@ def list_categories():
 
 
 # ════════════════════════════════════════════════════════════
+# PRIORITY (Öncelik Kategorileri)
+# ════════════════════════════════════════════════════════════
+
+@app.get("/api/priorities")
+def list_priorities():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT pc.*,
+            (SELECT COUNT(*) FROM products p
+             INNER JOIN price_history ph ON ph.product_sku = p.sku
+             WHERE p.category = pc.category) as product_count
+        FROM priority_categories pc
+        ORDER BY pc.priority DESC, pc.category
+    """)
+    rows = _rows(c)
+    conn.close()
+    return rows
+
+
+class PriorityItem(BaseModel):
+    category: str
+    priority: int = 1
+    scan_interval_minutes: int = 60
+    enabled: bool = True
+
+
+@app.post("/api/priorities")
+def add_priority(item: PriorityItem):
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO priority_categories (category, priority, scan_interval_minutes, enabled)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(category) DO UPDATE SET
+               priority = excluded.priority,
+               scan_interval_minutes = excluded.scan_interval_minutes,
+               enabled = excluded.enabled""",
+        (item.category, item.priority, item.scan_interval_minutes, item.enabled),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.delete("/api/priorities/{priority_id}")
+def delete_priority(priority_id: int):
+    conn = get_connection()
+    conn.execute("DELETE FROM priority_categories WHERE id = ?", (priority_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.put("/api/priorities/{priority_id}")
+def update_priority(priority_id: int, item: PriorityItem):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE priority_categories SET category=?, priority=?, scan_interval_minutes=?, enabled=? WHERE id=?",
+        (item.category, item.priority, item.scan_interval_minutes, item.enabled, priority_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ════════════════════════════════════════════════════════════
 # SERVICES
 # ════════════════════════════════════════════════════════════
 

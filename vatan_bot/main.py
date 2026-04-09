@@ -344,6 +344,19 @@ async def fiyat_tarama(worker_id: int = 0, total_workers: int = 1):
 
     s = get_scraper()
 
+    # Öncelikli kategorileri DB'den oku
+    from vatan_bot.db.models import get_connection
+    priority_cats = []
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT category FROM priority_categories WHERE enabled = 1 ORDER BY priority DESC"
+        ).fetchall()
+        priority_cats = [r[0] for r in rows]
+        conn.close()
+    except Exception:
+        pass
+
     # Kategori listesi — llmmap + ana sayfa + sabit liste birleştirilir
     kategori_urls = set(KATEGORI_URLS)
     try:
@@ -359,6 +372,20 @@ async def fiyat_tarama(worker_id: int = 0, total_workers: int = 1):
     except Exception as e:
         logger.warning(f"[FİYAT-{worker_id}] Ana sayfa keşfi başarısız: {e}")
     kategori_urls = sorted(kategori_urls)
+
+    # Öncelikli kategorilerin URL'lerini başa al
+    if priority_cats:
+        priority_urls = []
+        normal_urls = []
+        for u in kategori_urls:
+            cat_name = _cat_name_from_url(u)
+            if any(pc.lower() in cat_name.lower() for pc in priority_cats):
+                priority_urls.append(u)
+            else:
+                normal_urls.append(u)
+        kategori_urls = priority_urls + normal_urls
+        if priority_urls:
+            logger.info(f"[FİYAT-{worker_id}] {len(priority_urls)} öncelikli kategori başa alındı")
 
     # Bu worker'ın payına düşen kategoriler
     my_urls = [u for i, u in enumerate(kategori_urls) if i % total_workers == worker_id]
