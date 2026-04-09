@@ -241,10 +241,17 @@ def _new_scraper() -> BaseScraper:
     return ChainScraper()
 
 
+def _cat_name_from_url(base_url: str) -> str:
+    """Kategori URL'sinden okunabilir isim türetir. /bilgisayar-ram-bellek/ → Bilgisayar Ram Bellek"""
+    path = base_url.rstrip("/").split("/")[-1]
+    return path.replace("-", " ").title()
+
+
 async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
     """Tek kategoriyi dolaşır, her üründe fiyat farkı varsa sinyal verir. ASLA çökmez."""
     sonuc = {"kontrol": 0, "dusus": 0, "hatalar": 0}
     page = 1
+    fallback_cat = _cat_name_from_url(base_url)
 
     while True:
         try:
@@ -257,6 +264,11 @@ async def _fiyat_kontrol_tek_kategori(s, base_url: str) -> dict:
             products = parse_category_page(html)
             if not products:
                 break
+
+            # Kategorisiz ürünlere URL'den türetilen kategori adını ata
+            for p in products:
+                if not p.get("category"):
+                    p["category"] = fallback_cat
 
             for p in products:
                 try:
