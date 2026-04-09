@@ -147,7 +147,9 @@ async def detay_tarama(worker_id: int = 0, total_workers: int = 1):
         return
 
     logger.info(f"📦 [DETAY-{worker_id}] {len(my_urls)}/{len(all_urls)} fiyatsız ürün taranacak")
-    s = get_scraper()
+    # Detay taramada direkt Crawl4AI kullan — Worker/Proxy 403 veriyor, zaman kaybı
+    from vatan_bot.scrapers.crawl4ai_scraper import Crawl4AIScraper
+    s = Crawl4AIScraper(None)
     taranan = 0
     hatalar = 0
 
