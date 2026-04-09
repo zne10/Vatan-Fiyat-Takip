@@ -172,17 +172,26 @@ def bulk_update_products(updates: list[dict]) -> int:
 
                 updated += 1
             elif sku:
-                conn.execute(
-                    """INSERT OR IGNORE INTO products (sku, name, url, brand, category, data_completeness)
-                       VALUES (?, ?, ?, ?, ?, 1)""",
-                    (sku, p.get("name", ""), url, p.get("brand", ""), p.get("category", "")),
-                )
-                if conn.execute("SELECT 1 FROM products WHERE sku = ?", (sku,)).fetchone():
+                # Yeni ürün — önce products'a ekle, sonra fiyat yaz
+                try:
+                    conn.execute(
+                        """INSERT INTO products (sku, name, url, brand, category, data_completeness)
+                           VALUES (?, ?, ?, ?, ?, 1)
+                           ON CONFLICT(sku) DO UPDATE SET
+                               name = COALESCE(NULLIF(excluded.name, ''), products.name),
+                               url = COALESCE(NULLIF(excluded.url, ''), products.url),
+                               brand = COALESCE(NULLIF(excluded.brand, ''), products.brand),
+                               category = COALESCE(NULLIF(excluded.category, ''), products.category),
+                               updated_at = datetime('now','localtime')""",
+                        (sku, p.get("name", ""), url, p.get("brand", ""), p.get("category", "")),
+                    )
                     conn.execute(
                         "INSERT INTO price_history (product_sku, price, in_stock, scraped_at) VALUES (?, ?, ?, datetime('now','localtime'))",
                         (sku, price, p.get("in_stock", True)),
                     )
-                updated += 1
+                    updated += 1
+                except Exception as inner_e:
+                    _log.debug(f"Yeni ürün ekleme hatası (sku={sku}): {inner_e}")
         except Exception as e:
             _log.warning(f"bulk_update tekil hata (sku={p.get('sku','')}): {e}")
             continue
